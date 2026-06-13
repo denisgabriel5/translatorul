@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+input/
+output/
+videos/
+models/*.gguf
+*.egg-info/
+.DS_Store
