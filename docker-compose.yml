@@ -17,7 +17,9 @@ services:
       # Translation model (Qwen2.5-7B Q4_K_M needs ~6GB RAM on CPU).
       - TRANSLATE_MODEL_FILE=Qwen2.5-7B-Instruct-Q4_K_M.gguf
       # faster-whisper transcription model + CPU compute type.
-      - WHISPER_MODEL=small
+      # large-v3-turbo: near-large accuracy, much faster than large-v3 on CPU.
+      # Drop to "small"/"medium" for faster (lower-quality) transcription.
+      - WHISPER_MODEL=large-v3-turbo
       - WHISPER_COMPUTE_TYPE=int8
       # Run one job at a time on CPU-only hosts (Whisper + Qwen + ffmpeg
       # together use most of a 32GB machine's RAM).

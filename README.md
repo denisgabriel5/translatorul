@@ -28,8 +28,9 @@ To build the image locally instead of pulling it, uncomment `build: .` in
 | `TRANSLATE_N_CTX` | `8192` | Context window for the translation model |
 | `TRANSLATE_BATCH_SIZE` | `12` | Subtitle cues translated per LLM call |
 | `TRANSLATE_CONTEXT_CUES` | `3` | Preceding cues shown as context for each batch |
-| `WHISPER_MODEL` | `small` | faster-whisper model size |
+| `WHISPER_MODEL` | `large-v3-turbo` | faster-whisper model size (`small`/`medium` are faster, lower quality) |
 | `WHISPER_COMPUTE_TYPE` | `int8` | faster-whisper compute type (CPU) |
+| `WHISPER_VAD` | `true` | Trim non-speech (VAD) to keep subtitle timing in sync |
 | `MAX_CONCURRENT_JOBS` | `1` | Jobs run in parallel (each loads Whisper + the LLM) |
 | `JOB_TIMEOUT` | `7200` | Max seconds before a job is killed |
 | `RESULT_TTL` | `21600` | Seconds a finished video is kept if not downloaded |
