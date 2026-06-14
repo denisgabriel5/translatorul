@@ -25,7 +25,7 @@ To build the image locally instead of pulling it, uncomment `build: .` in
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRANSLATE_MODEL_REPO` | `jbochi/madlad400-3b-mt` | Hugging Face repo (CTranslate2 NMT) downloaded on first run |
+| `TRANSLATE_MODEL_REPO` | `santhosh/madlad400-3b-ct2` | Hugging Face repo (CTranslate2 build) downloaded on first run |
 | `TRANSLATE_COMPUTE_TYPE` | `int8` | CTranslate2 compute type for translation (CPU) |
 | `TRANSLATE_BATCH_SIZE` | `16` | Subtitle cues translated per CTranslate2 batch |
 | `WHISPER_MODEL` | `large-v3-turbo` | faster-whisper model size (`small`/`medium` are faster, lower quality) |
@@ -55,9 +55,8 @@ Download the translation model (CTranslate2 weights + tokenizer):
 .venv/bin/python -c "
 from huggingface_hub import snapshot_download
 snapshot_download(
-    repo_id='jbochi/madlad400-3b-mt',
-    local_dir='models/madlad',
-    ignore_patterns=['*.safetensors', '*.h5', '*.msgpack'],
+    repo_id='santhosh/madlad400-3b-ct2',
+    local_dir='models/madlad-ct2',
 )
 "
 ```
@@ -109,4 +108,4 @@ the OS preference and is remembered via `localStorage`.
 - `main.py` — CLI pipeline
 - `static/index.html` — Romanian web interface
 - `jobs/` — per-job working directories (created at runtime)
-- `models/` — translation model (`madlad/`) + faster-whisper cache
+- `models/` — translation model (`madlad-ct2/`) + faster-whisper cache

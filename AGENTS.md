@@ -17,7 +17,7 @@ translatorul/
 ├── main.py                 # CLI orchestrator (download → transcribe → translate)
 ├── static/index.html       # Romanian web UI
 ├── Dockerfile, docker-compose.yml, docker-entrypoint.sh
-├── models/                  # Madlad CT2 model + faster-whisper cache (volume)
+├── models/                  # Madlad CT2 model (madlad-ct2/) + faster-whisper cache (volume)
 └── jobs/                     # per-job working directories (volume, runtime)
 ```
 
@@ -50,13 +50,15 @@ Earlier iterations used a general LLM (Qwen2.5), first per-cue then batched-with
 That fixed alignment but was slow on CPU (a 14B model ran 30+ min for a 20-min video) and
 still occasionally fabricated non-words. Now translation uses a dedicated NMT:
 
-- **Madlad-400 3B** (`jbochi/madlad400-3b-mt`) via **CTranslate2**, `int8` on CPU. ~10-30×
-  faster than the LLM, won't invent words, and needs no source-language detection.
+- **Madlad-400 3B** via **CTranslate2** (`santhosh/madlad400-3b-ct2` — a CT2 build with
+  `model.bin` + `sentencepiece.model`; the plain HF/transformers repo is NOT CT2-loadable),
+  `int8` on CPU. ~10-30× faster than the LLM, won't invent words, no source-lang detection.
 - Each cue is prefixed with the Madlad target token `<2xx>` (e.g. `<2ro>`), tokenized with
   SentencePiece, and translated; one output per input cue keeps timestamps aligned.
 - Env-configurable: `TRANSLATE_MODEL_REPO`, `TRANSLATE_MODEL_DIR`/`TRANSLATE_MODEL_SUBDIR`,
-  `TRANSLATE_COMPUTE_TYPE` (int8), `TRANSLATE_BATCH_SIZE` (16), `TRANSLATE_BEAM_SIZE` (1),
-  `TRANSLATE_THREADS`. A module-level lock guards the translator.
+  `TRANSLATE_COMPUTE_TYPE` (int8), `TRANSLATE_MAX_BATCH_SIZE` (1024 tokens), `TRANSLATE_BEAM_SIZE`
+  (1), `TRANSLATE_REPETITION_PENALTY` (1.1), `TRANSLATE_NO_REPEAT_NGRAM` (0), `TRANSLATE_THREADS`.
+  The SentencePiece file is auto-detected. A module-level lock guards the translator.
 
 ## Transcription
 
@@ -70,8 +72,8 @@ still occasionally fabricated non-words. Now translation uses a dedicated NMT:
 - `Dockerfile`: CPU-only `python:3.12-slim`, installs ffmpeg + Node.js (yt-dlp JS challenge
   bypass) + `tini` (PID 1 / zombie reaping for killed process groups). No build toolchain —
   ctranslate2/faster-whisper/sentencepiece ship prebuilt wheels, so the image builds fast.
-- `docker-entrypoint.sh`: downloads the Madlad CT2 model into `/app/models/madlad` on first
-  run if missing (skips the redundant `*.safetensors`).
+- `docker-entrypoint.sh`: downloads the Madlad CT2 model into `/app/models/madlad-ct2`
+  whenever `model.bin` is missing (self-heals a partial/incompatible model).
 - `docker-compose.yml`: pulls `ghcr.io/denisgabriel5/translatorul:latest`; `models` and `jobs`
   named volumes persist weights and (briefly) job output.
 - `.github/workflows/docker-publish.yml`: builds and pushes the image to GHCR on push to

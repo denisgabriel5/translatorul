@@ -16,8 +16,9 @@ services:
     environment:
       # Translation: Madlad-400 3B dedicated NMT (CTranslate2), int8 on CPU
       # (~3-4GB RAM). Much faster than an LLM and won't invent words.
-      # TRANSLATE_MODEL_REPO is the HF repo downloaded on first run.
-      - TRANSLATE_MODEL_REPO=jbochi/madlad400-3b-mt
+      # Must be a CTranslate2 build (model.bin + sentencepiece.model). Smaller
+      # pre-int8 alternative: zenoverflow/madlad400-3b-mt-int8-float32
+      - TRANSLATE_MODEL_REPO=santhosh/madlad400-3b-ct2
       - TRANSLATE_COMPUTE_TYPE=int8
       # faster-whisper transcription model + CPU compute type.
       # large-v3-turbo: near-large accuracy, much faster than large-v3 on CPU.
