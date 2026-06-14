@@ -18,6 +18,10 @@ WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 # from drifting around silence/music -- the main cause of out-of-sync subtitles.
 WHISPER_VAD = os.environ.get("WHISPER_VAD", "true").lower() in ("1", "true", "yes")
 
+# Constant nudge (milliseconds) applied to every cue, in case subtitles land a
+# touch early/late overall. Negative shows them sooner. Default 0 (no shift).
+SUBTITLE_OFFSET = float(os.environ.get("SUBTITLE_OFFSET_MS", "0")) / 1000.0
+
 _whisper_model = None
 
 BASE_YDL_OPTS = {
@@ -104,15 +108,20 @@ def _load_whisper_model(model_name: str):
 
 def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None) -> dict:
     model = _load_whisper_model(model_name)
+    # word_timestamps gives per-word alignment; tightening each cue to its first
+    # and last spoken word trims silence padding and improves sync noticeably.
     segments, _info = model.transcribe(
-        str(audio_path), language=language, vad_filter=WHISPER_VAD
+        str(audio_path), language=language, vad_filter=WHISPER_VAD, word_timestamps=True
     )
-    return {
-        "segments": [
-            {"start": seg.start, "end": seg.end, "text": seg.text}
-            for seg in segments
-        ]
-    }
+    out = []
+    for seg in segments:
+        words = seg.words or []
+        start = words[0].start if words else seg.start
+        end = words[-1].end if words else seg.end
+        start = max(0.0, start + SUBTITLE_OFFSET)
+        end = max(start, end + SUBTITLE_OFFSET)
+        out.append({"start": start, "end": end, "text": seg.text})
+    return {"segments": out}
 
 
 def read_vtt_cues(path: Path) -> list[tuple[str, str]]:

@@ -25,7 +25,7 @@ MODEL_REPO = os.environ.get("TRANSLATE_MODEL_REPO", "santhosh/madlad400-3b-ct2")
 COMPUTE_TYPE = os.environ.get("TRANSLATE_COMPUTE_TYPE", "int8")
 THREADS = int(os.environ.get("TRANSLATE_THREADS", str(os.cpu_count() or 4)))
 MAX_BATCH_SIZE = int(os.environ.get("TRANSLATE_MAX_BATCH_SIZE", "1024"))
-BEAM_SIZE = int(os.environ.get("TRANSLATE_BEAM_SIZE", "1"))
+BEAM_SIZE = int(os.environ.get("TRANSLATE_BEAM_SIZE", "4"))
 # Madlad-CT2 anti-repetition knobs (tunable if you see looping/repeats).
 REPETITION_PENALTY = float(os.environ.get("TRANSLATE_REPETITION_PENALTY", "1.1"))
 NO_REPEAT_NGRAM = int(os.environ.get("TRANSLATE_NO_REPEAT_NGRAM", "0"))

@@ -57,7 +57,7 @@ still occasionally fabricated non-words. Now translation uses a dedicated NMT:
   SentencePiece, and translated; one output per input cue keeps timestamps aligned.
 - Env-configurable: `TRANSLATE_MODEL_REPO`, `TRANSLATE_MODEL_DIR`/`TRANSLATE_MODEL_SUBDIR`,
   `TRANSLATE_COMPUTE_TYPE` (int8), `TRANSLATE_MAX_BATCH_SIZE` (1024 tokens), `TRANSLATE_BEAM_SIZE`
-  (1), `TRANSLATE_REPETITION_PENALTY` (1.1), `TRANSLATE_NO_REPEAT_NGRAM` (0), `TRANSLATE_THREADS`.
+  (4), `TRANSLATE_REPETITION_PENALTY` (1.1), `TRANSLATE_NO_REPEAT_NGRAM` (0), `TRANSLATE_THREADS`.
   The SentencePiece file is auto-detected. A module-level lock guards the translator.
 
 ## Transcription
@@ -65,7 +65,8 @@ still occasionally fabricated non-words. Now translation uses a dedicated NMT:
 - **faster-whisper** (CTranslate2) instead of `openai-whisper` — ~4x faster on CPU, lower
   memory, streams segments. Model size/compute type via `WHISPER_MODEL` (default
   `large-v3-turbo`) and `WHISPER_COMPUTE_TYPE` (default `int8`); `WHISPER_VAD` (default on)
-  trims non-speech to keep subtitle timing in sync.
+  trims non-speech. `word_timestamps=True` + tightening each cue to its first/last spoken
+  word sharpens sync; `SUBTITLE_OFFSET_MS` nudges all cues if they read early/late.
 
 ## Docker
 

@@ -27,10 +27,11 @@ To build the image locally instead of pulling it, uncomment `build: .` in
 |---|---|---|
 | `TRANSLATE_MODEL_REPO` | `santhosh/madlad400-3b-ct2` | Hugging Face repo (CTranslate2 build) downloaded on first run |
 | `TRANSLATE_COMPUTE_TYPE` | `int8` | CTranslate2 compute type for translation (CPU) |
-| `TRANSLATE_BATCH_SIZE` | `16` | Subtitle cues translated per CTranslate2 batch |
+| `TRANSLATE_BEAM_SIZE` | `4` | Beam search width; higher = better translation, slower (1 = greedy) |
 | `WHISPER_MODEL` | `large-v3-turbo` | faster-whisper model size (`small`/`medium` are faster, lower quality) |
 | `WHISPER_COMPUTE_TYPE` | `int8` | faster-whisper compute type (CPU) |
 | `WHISPER_VAD` | `true` | Trim non-speech (VAD) to keep subtitle timing in sync |
+| `SUBTITLE_OFFSET_MS` | `0` | Constant shift for all cues if they're a touch early/late (negative = sooner) |
 | `MAX_CONCURRENT_JOBS` | `1` | Jobs run in parallel (each loads Whisper + the translator) |
 | `JOB_TIMEOUT` | `7200` | Max seconds before a job is killed |
 | `RESULT_TTL` | `21600` | Seconds a finished video is kept if not downloaded |
