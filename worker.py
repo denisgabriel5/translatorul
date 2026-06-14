@@ -21,7 +21,6 @@ import yt_dlp
 
 from transcribe import (
     BASE_YDL_OPTS,
-    download_audio,
     download_subs,
     extract_info,
     has_manual_subtitles,
@@ -80,27 +79,27 @@ def embed_subtitles(video_path: Path, srt_path: Path, job_dir: Path) -> Path:
 def run(url: str, target_lang: str, job_dir: Path):
     job_dir.mkdir(parents=True, exist_ok=True)
 
-    emit("extract", "Se extrag informațiile...", 0.1)
+    emit("extract", "Se extrag informațiile...", 0.05)
     info = extract_info(url)
     title = info.get("title") or "video"
-    done("extract", "Informații extrase")
+    emit("extract", "Se descarcă videoclipul...", 0.15)
+    video_path = download_video(info, job_dir)
+    done("extract", "Videoclip descărcat")
 
     if has_manual_subtitles(info):
-        emit("content", "Subtitrări găsite", 0.2)
-        emit("content", "Se descarcă subtitrările...", 0.25)
+        emit("content", "Subtitrări găsite", 0.45)
+        emit("content", "Se descarcă subtitrările...", 0.5)
         sub_file = download_subs(info, job_dir)
         cues = read_vtt_cues(sub_file)
         sub_file.unlink()
         done("content", "Subtitrări descărcate")
     else:
-        emit("content", "Fără subtitrări, se transcrie...", 0.2)
-        emit("content", "Se descarcă audio...", 0.2)
-        audio_path = download_audio(info, job_dir)
-        emit("content", "Audio descărcat, se încarcă modelul...", 0.25)
-        cues = transcribe_to_cues(transcribe(audio_path, WHISPER_MODEL))
+        emit("content", "Fără subtitrări, se transcrie...", 0.45)
+        emit("content", "Se încarcă modelul și se transcrie...", 0.5)
+        cues = transcribe_to_cues(transcribe(video_path, WHISPER_MODEL))
         done("content", "Transcriere completă")
 
-    emit("translate", "Se traduce...", 0.35)
+    emit("translate", "Se traduce...", 0.7)
     translated = translate_text([t for _, t in cues], target_lang)
     translated_cues = [(timing, t) for (timing, _), t in zip(cues, translated)]
     done("translate", "Traducere completă")
@@ -108,11 +107,9 @@ def run(url: str, target_lang: str, job_dir: Path):
     srt_path = job_dir / "translated.srt"
     write_srt(translated_cues, srt_path)
 
-    emit("download", "Se descarcă videoclipul...", 0.7)
-    video_path = download_video(info, job_dir)
-    emit("download", "Se încorporează subtitrările...", 0.85)
+    emit("embed", "Se încorporează subtitrările...", 0.9)
     final_path = embed_subtitles(video_path, srt_path, job_dir)
-    done("download", "Videoclip gata")
+    done("embed", "Videoclip gata")
 
     if not final_path.exists():
         raise RuntimeError("ffmpeg failed to produce the subtitled video")
