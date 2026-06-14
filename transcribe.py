@@ -23,8 +23,6 @@ _whisper_model = None
 BASE_YDL_OPTS = {
     "quiet": True,
     "socket_timeout": 30,
-    "js_runtimes": {"node": {}},
-    "remote_components": {"ejs:github"},
 }
 
 

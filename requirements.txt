@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 sse-starlette
 yt-dlp
+yt-dlp-ejs
 ctranslate2
 sentencepiece
 faster-whisper

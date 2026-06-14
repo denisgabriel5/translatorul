@@ -28,6 +28,10 @@ services:
       # Run one job at a time on CPU-only hosts (Whisper + translator + ffmpeg
       # all compete for cores/RAM).
       - MAX_CONCURRENT_JOBS=1
+      # Optional Hugging Face token (higher rate limits / faster model
+      # downloads, silences the "unauthenticated requests" warning). Put the
+      # value in a local .env file (HF_TOKEN=hf_...); never commit it.
+      - HF_TOKEN=${HF_TOKEN:-}
 
 volumes:
   models:
