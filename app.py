@@ -28,7 +28,9 @@ app = FastAPI(title="Translatorul", lifespan=lifespan)
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    # Revalidate on every load so a redeploy never serves a stale UI.
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/start")

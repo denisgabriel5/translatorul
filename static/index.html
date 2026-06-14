@@ -441,6 +441,7 @@ function handleProgress(data) {
     loadHistory();
     return;
   }
+  completePriorSteps(step);
   setStepMessage(step, message);
   setStepProgress(step, progress);
   if (status === 'done') {
@@ -449,6 +450,25 @@ function handleProgress(data) {
     markSkipped(step, message);
   } else {
     activateStep(step);
+  }
+}
+
+const STEP_ORDER = ['extract', 'content', 'translate', 'embed'];
+
+// Reaching a step means everything before it is finished, even if that
+// step's own "done" event was missed or skipped (e.g. transcription when
+// subtitles already exist). Fill those bars so none get stranded.
+function completePriorSteps(step) {
+  const idx = STEP_ORDER.indexOf(step);
+  if (idx <= 0) return;
+  for (let i = 0; i < idx; i++) {
+    const prev = STEP_ORDER[i];
+    const el = document.getElementById(`step-${prev}`);
+    if (el && !el.classList.contains('done')) {
+      el.classList.remove('active');
+      el.classList.add('done');
+    }
+    setStepProgress(prev, 1);
   }
 }
 
