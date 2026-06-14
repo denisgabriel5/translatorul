@@ -38,6 +38,11 @@ translatorul/
   finished-but-undownloaded results after `RESULT_TTL`.
 - **Auto-cancel**: SSE disconnect (browser closed/navigated away) cancels the job; the
   `beforeunload` `navigator.sendBeacon` call remains as a backup.
+- **UI** (`static/index.html`): Apple-style design (SF Pro fonts, glassmorphism, blue
+  accent). A "Videoclipuri recente" card lists finished jobs from `GET /jobs` with a
+  live countdown to `expires_at` and a delete button (`DELETE /jobs/{task_id}`). A
+  Sistem/Luminos/Întunecat segmented control toggles `data-theme` on `<html>`, persisted
+  in `localStorage`; with no choice saved it follows `prefers-color-scheme`.
 
 ## Translation: batched, context-aware (`translate.py`)
 

@@ -69,6 +69,11 @@ hf_hub_download(
 
 Open http://localhost:8000, paste a YouTube URL, and click **Pornește**.
 
+The UI shows live progress for each pipeline step, a "Videoclipuri recente" section
+listing finished videos with a countdown until they expire (`RESULT_TTL`) and a delete
+button, and a Sistem/Luminos/Întunecat (system/light/dark) theme toggle that defaults to
+the OS preference and is remembered via `localStorage`.
+
 ### CLI
 
 ```bash
