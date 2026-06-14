@@ -1,5 +1,6 @@
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -8,16 +9,21 @@ from sse_starlette.sse import EventSourceResponse
 
 import job_manager
 
-app = FastAPI(title="Translatorul")
-
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
 
 
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     job_manager.load_completed_jobs()
-    asyncio.create_task(job_manager.sweep_loop())
+    sweep_task = asyncio.create_task(job_manager.sweep_loop())
+    try:
+        yield
+    finally:
+        sweep_task.cancel()
+
+
+app = FastAPI(title="Translatorul", lifespan=lifespan)
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -3,7 +3,10 @@ services:
     image: ghcr.io/denisgabriel5/translatorul:latest
     # Uncomment to build locally instead of pulling the published image:
     # build: .
-    init: true
+    container_name: translatorul
+    # No `init: true` here -- the image's ENTRYPOINT already runs tini as PID 1.
+    # Setting both would demote tini to a child process (the "Tini is not running
+    # as PID 1" warning) and reaping would stop working.
     restart: unless-stopped
     ports:
       - "8000:8000"
