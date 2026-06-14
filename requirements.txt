@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sse-starlette
+yt-dlp
+yt-dlp-ejs
+curl-cffi
+ctranslate2
+sentencepiece
+faster-whisper
+rich
+huggingface-hub

@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+input
+output
+videos
+jobs
+models
+tests
+.DS_Store

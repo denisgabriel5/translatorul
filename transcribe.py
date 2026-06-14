@@ -1,17 +1,32 @@
 import html
+import os
 from pathlib import Path
 
-import whisper
 import yt_dlp
 
 
 SUBTITLE_LANGS = ["en", "es", "fr", "de", "pt", "it", "nl", "ru", "ja", "ko", "zh"]
 
+# faster-whisper (CTranslate2) model name and compute type. "small" / "int8"
+# is a good CPU-only speed/quality balance; bump to "large-v3-turbo" if more
+# RAM/CPU is available.
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
+WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+
+# Voice-activity detection trims non-speech, which keeps segment timestamps
+# from drifting around silence/music -- the main cause of out-of-sync subtitles.
+WHISPER_VAD = os.environ.get("WHISPER_VAD", "true").lower() in ("1", "true", "yes")
+
+# Constant nudge (milliseconds) applied to every cue, in case subtitles land a
+# touch early/late overall. Negative shows them sooner. Default 0 (no shift).
+SUBTITLE_OFFSET = float(os.environ.get("SUBTITLE_OFFSET_MS", "0")) / 1000.0
+
+_whisper_model = None
+
 BASE_YDL_OPTS = {
     "quiet": True,
     "socket_timeout": 30,
-    "js_runtimes": {"node": {}},
-    "remote_components": {"ejs:github"},
 }
 
 
@@ -79,10 +94,38 @@ def download_audio(info: dict, output_dir: Path) -> Path:
     return audio_path
 
 
-def transcribe(audio_path: Path, model_name: str = "base", language: str | None = None) -> dict:
-    model = whisper.load_model(model_name)
-    result = model.transcribe(str(audio_path), language=language, verbose=False)
-    return result
+def _load_whisper_model(model_name: str):
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        _whisper_model = WhisperModel(
+            model_name,
+            device=WHISPER_DEVICE,
+            compute_type=WHISPER_COMPUTE_TYPE,
+        )
+    return _whisper_model
+
+
+def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None,
+               on_progress=None) -> dict:
+    model = _load_whisper_model(model_name)
+    # word_timestamps gives per-word alignment; tightening each cue to its first
+    # and last spoken word trims silence padding and improves sync noticeably.
+    segments, info = model.transcribe(
+        str(audio_path), language=language, vad_filter=WHISPER_VAD, word_timestamps=True
+    )
+    total = getattr(info, "duration", 0) or 0
+    out = []
+    for seg in segments:
+        words = seg.words or []
+        start = words[0].start if words else seg.start
+        end = words[-1].end if words else seg.end
+        start = max(0.0, start + SUBTITLE_OFFSET)
+        end = max(start, end + SUBTITLE_OFFSET)
+        out.append({"start": start, "end": end, "text": seg.text})
+        if on_progress and total:
+            on_progress(seg.end / total)
+    return {"segments": out}
 
 
 def read_vtt_cues(path: Path) -> list[tuple[str, str]]:
@@ -98,7 +141,12 @@ def read_vtt_cues(path: Path) -> list[tuple[str, str]]:
             current_timing = ""
             current_text = []
         elif " --> " in stripped:
-            current_timing = stripped
+            # VTT timing lines can carry positioning info, e.g.
+            # "00:00:01.000 --> 00:00:04.000 align:start position:0%".
+            # Keep only the start/end timestamps so the SRT stays valid.
+            start, _, rest = stripped.partition(" --> ")
+            end = rest.split(maxsplit=1)[0] if rest.strip() else rest
+            current_timing = f"{start.strip()} --> {end.strip()}"
         else:
             current_text.append(html.unescape(stripped).replace("\u00a0", ""))
     if current_timing and current_text:

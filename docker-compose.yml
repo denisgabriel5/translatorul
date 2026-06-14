@@ -1,0 +1,38 @@
+services:
+  translatorul:
+    image: ghcr.io/denisgabriel5/translatorul:latest
+    # Uncomment to build locally instead of pulling the published image:
+    # build: .
+    container_name: translatorul
+    # No `init: true` here -- the image's ENTRYPOINT already runs tini as PID 1.
+    # Setting both would demote tini to a child process (the "Tini is not running
+    # as PID 1" warning) and reaping would stop working.
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - models:/app/models
+      - jobs:/app/jobs
+    environment:
+      # Translation: Madlad-400 3B dedicated NMT (CTranslate2), int8 on CPU
+      # (~3-4GB RAM). Much faster than an LLM and won't invent words.
+      # Must be a CTranslate2 build (model.bin + sentencepiece.model). Smaller
+      # pre-int8 alternative: zenoverflow/madlad400-3b-mt-int8-float32
+      - TRANSLATE_MODEL_REPO=santhosh/madlad400-3b-ct2
+      - TRANSLATE_COMPUTE_TYPE=int8
+      # faster-whisper transcription model + CPU compute type.
+      # large-v3-turbo: near-large accuracy, much faster than large-v3 on CPU.
+      # Drop to "small"/"medium" for faster (lower-quality) transcription.
+      - WHISPER_MODEL=large-v3-turbo
+      - WHISPER_COMPUTE_TYPE=int8
+      # Run one job at a time on CPU-only hosts (Whisper + translator + ffmpeg
+      # all compete for cores/RAM).
+      - MAX_CONCURRENT_JOBS=1
+      # Optional Hugging Face token (higher rate limits / faster model
+      # downloads, silences the "unauthenticated requests" warning). Put the
+      # value in a local .env file (HF_TOKEN=hf_...); never commit it.
+      - HF_TOKEN=${HF_TOKEN:-}
+
+volumes:
+  models:
+  jobs:

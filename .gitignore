@@ -4,6 +4,10 @@ __pycache__/
 input/
 output/
 videos/
+jobs/
 models/*.gguf
+models/hf_cache/
 *.egg-info/
 .DS_Store
+.pytest_cache/
+.env
