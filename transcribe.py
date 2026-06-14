@@ -106,13 +106,15 @@ def _load_whisper_model(model_name: str):
     return _whisper_model
 
 
-def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None) -> dict:
+def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None,
+               on_progress=None) -> dict:
     model = _load_whisper_model(model_name)
     # word_timestamps gives per-word alignment; tightening each cue to its first
     # and last spoken word trims silence padding and improves sync noticeably.
-    segments, _info = model.transcribe(
+    segments, info = model.transcribe(
         str(audio_path), language=language, vad_filter=WHISPER_VAD, word_timestamps=True
     )
+    total = getattr(info, "duration", 0) or 0
     out = []
     for seg in segments:
         words = seg.words or []
@@ -121,6 +123,8 @@ def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str 
         start = max(0.0, start + SUBTITLE_OFFSET)
         end = max(start, end + SUBTITLE_OFFSET)
         out.append({"start": start, "end": end, "text": seg.text})
+        if on_progress and total:
+            on_progress(seg.end / total)
     return {"segments": out}
 
 

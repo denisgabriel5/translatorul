@@ -78,6 +78,10 @@ async def _terminate_process_group(proc: asyncio.subprocess.Process):
 
 
 async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job: dict, short: str):
+    # Progress arrives in ~1% ticks; only log on step change / each ~10% so the
+    # container log stays readable while the UI still gets every update.
+    last_step = None
+    last_decile = -1
     async for raw_line in proc.stdout:
         line = raw_line.decode("utf-8", errors="ignore").strip()
         if not line:
@@ -99,7 +103,10 @@ async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job
             logger.info("job %s | gata | %s", short, job["display_name"])
         else:
             progress = msg.get("progress") or 0
-            logger.info("job %s | %-9s %3d%% | %s", short, step, int(progress * 100), msg.get("message", ""))
+            decile = int(progress * 10)
+            if step != last_step or decile != last_decile:
+                last_step, last_decile = step, decile
+                logger.info("job %s | %-9s %3d%% | %s", short, step, int(progress * 100), msg.get("message", ""))
         await q.put(msg)
 
 

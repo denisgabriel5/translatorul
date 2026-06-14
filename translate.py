@@ -26,6 +26,8 @@ COMPUTE_TYPE = os.environ.get("TRANSLATE_COMPUTE_TYPE", "int8")
 THREADS = int(os.environ.get("TRANSLATE_THREADS", str(os.cpu_count() or 4)))
 MAX_BATCH_SIZE = int(os.environ.get("TRANSLATE_MAX_BATCH_SIZE", "1024"))
 BEAM_SIZE = int(os.environ.get("TRANSLATE_BEAM_SIZE", "4"))
+# Cues per translate_batch call -- smaller gives more frequent progress updates.
+PROGRESS_CHUNK = int(os.environ.get("TRANSLATE_PROGRESS_CHUNK", "24"))
 # Madlad-CT2 anti-repetition knobs (tunable if you see looping/repeats).
 REPETITION_PENALTY = float(os.environ.get("TRANSLATE_REPETITION_PENALTY", "1.1"))
 NO_REPEAT_NGRAM = int(os.environ.get("TRANSLATE_NO_REPEAT_NGRAM", "0"))
@@ -75,7 +77,7 @@ def _load():
     _sp.load(str(_find_spm_file()))
 
 
-def translate_text(texts: list[str], target_lang: str = "ro") -> list[str]:
+def translate_text(texts: list[str], target_lang: str = "ro", on_progress=None) -> list[str]:
     if not texts:
         return []
 
@@ -86,18 +88,27 @@ def translate_text(texts: list[str], target_lang: str = "ro") -> list[str]:
     indices = [i for i, t in enumerate(texts) if t and t.strip()]
     results = [""] * len(texts)
     if not indices:
+        if on_progress:
+            on_progress(1.0)
         return results
 
-    inputs = [_sp.encode(f"<2{lang}> {texts[i].strip()}", out_type=str) for i in indices]
-    with _lock:
-        outputs = _translator.translate_batch(
-            inputs,
-            batch_type="tokens",
-            max_batch_size=MAX_BATCH_SIZE,
-            beam_size=BEAM_SIZE,
-            repetition_penalty=REPETITION_PENALTY,
-            no_repeat_ngram_size=NO_REPEAT_NGRAM,
-        )
-    for i, out in zip(indices, outputs):
-        results[i] = _sp.decode(out.hypotheses[0]).strip()
+    total = len(indices)
+    completed = 0
+    for chunk_start in range(0, total, PROGRESS_CHUNK):
+        chunk = indices[chunk_start:chunk_start + PROGRESS_CHUNK]
+        inputs = [_sp.encode(f"<2{lang}> {texts[i].strip()}", out_type=str) for i in chunk]
+        with _lock:
+            outputs = _translator.translate_batch(
+                inputs,
+                batch_type="tokens",
+                max_batch_size=MAX_BATCH_SIZE,
+                beam_size=BEAM_SIZE,
+                repetition_penalty=REPETITION_PENALTY,
+                no_repeat_ngram_size=NO_REPEAT_NGRAM,
+            )
+        for i, out in zip(chunk, outputs):
+            results[i] = _sp.decode(out.hypotheses[0]).strip()
+        completed += len(chunk)
+        if on_progress:
+            on_progress(completed / total)
     return results
