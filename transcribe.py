@@ -14,6 +14,10 @@ WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 
+# Voice-activity detection trims non-speech, which keeps segment timestamps
+# from drifting around silence/music -- the main cause of out-of-sync subtitles.
+WHISPER_VAD = os.environ.get("WHISPER_VAD", "true").lower() in ("1", "true", "yes")
+
 _whisper_model = None
 
 BASE_YDL_OPTS = {
@@ -102,7 +106,9 @@ def _load_whisper_model(model_name: str):
 
 def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None) -> dict:
     model = _load_whisper_model(model_name)
-    segments, _info = model.transcribe(str(audio_path), language=language)
+    segments, _info = model.transcribe(
+        str(audio_path), language=language, vad_filter=WHISPER_VAD
+    )
     return {
         "segments": [
             {"start": seg.start, "end": seg.end, "text": seg.text}
@@ -124,7 +130,12 @@ def read_vtt_cues(path: Path) -> list[tuple[str, str]]:
             current_timing = ""
             current_text = []
         elif " --> " in stripped:
-            current_timing = stripped
+            # VTT timing lines can carry positioning info, e.g.
+            # "00:00:01.000 --> 00:00:04.000 align:start position:0%".
+            # Keep only the start/end timestamps so the SRT stays valid.
+            start, _, rest = stripped.partition(" --> ")
+            end = rest.split(maxsplit=1)[0] if rest.strip() else rest
+            current_timing = f"{start.strip()} --> {end.strip()}"
         else:
             current_text.append(html.unescape(stripped).replace("\u00a0", ""))
     if current_timing and current_text:
