@@ -24,7 +24,8 @@ To build the image locally instead of pulling it, uncomment `build: .` in
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRANSLATE_MODEL_FILE` | `Qwen2.5-7B-Instruct-Q4_K_M.gguf` | Translation GGUF model file (in `models/`) |
+| `TRANSLATE_MODEL_FILE` | `Qwen2.5-14B-Instruct-Q8_0.gguf` | Translation GGUF model file (in `models/`); use a Q4_K_M file or the 7B for less RAM |
+| `TRANSLATE_MODEL_REPO` | `bartowski/Qwen2.5-14B-Instruct-GGUF` | Hugging Face repo the model is downloaded from on first run |
 | `TRANSLATE_N_CTX` | `8192` | Context window for the translation model |
 | `TRANSLATE_BATCH_SIZE` | `12` | Subtitle cues translated per LLM call |
 | `TRANSLATE_CONTEXT_CUES` | `3` | Preceding cues shown as context for each batch |
@@ -40,7 +41,7 @@ To build the image locally instead of pulling it, uncomment `build: .` in
 Requirements:
 
 - Python 3.12+
-- ~6 GB RAM free for Qwen2.5-7B Q4_K_M on CPU
+- ~16 GB RAM free for Qwen2.5-14B Q8_0 on CPU (less for a Q4_K_M / 7B model)
 - [FFmpeg](https://ffmpeg.org/) installed and on PATH
 - [Node.js](https://nodejs.org/) (for yt-dlp JS challenge bypass)
 
@@ -49,14 +50,14 @@ python -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Download the translation model (~4.4 GB):
+Download the translation model (~15.7 GB):
 
 ```bash
 .venv/bin/python -c "
 from huggingface_hub import hf_hub_download
 hf_hub_download(
-    repo_id='lmstudio-community/Qwen2.5-7B-Instruct-GGUF',
-    filename='Qwen2.5-7B-Instruct-Q4_K_M.gguf',
+    repo_id='bartowski/Qwen2.5-14B-Instruct-GGUF',
+    filename='Qwen2.5-14B-Instruct-Q8_0.gguf',
     local_dir='models'
 )
 "

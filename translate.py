@@ -4,7 +4,8 @@ import threading
 from pathlib import Path
 
 MODEL_DIR = Path(os.environ.get("TRANSLATE_MODEL_DIR", str(Path(__file__).parent / "models")))
-MODEL_FILE = os.environ.get("TRANSLATE_MODEL_FILE", "Qwen2.5-7B-Instruct-Q4_K_M.gguf")
+MODEL_FILE = os.environ.get("TRANSLATE_MODEL_FILE", "Qwen2.5-14B-Instruct-Q8_0.gguf")
+MODEL_REPO = os.environ.get("TRANSLATE_MODEL_REPO", "bartowski/Qwen2.5-14B-Instruct-GGUF")
 MODEL_PATH = Path(os.environ.get("TRANSLATE_MODEL_PATH", str(MODEL_DIR / MODEL_FILE)))
 
 N_CTX = int(os.environ.get("TRANSLATE_N_CTX", "8192"))
@@ -64,7 +65,7 @@ def _load():
         raise FileNotFoundError(
             f"Model not found at {MODEL_PATH}. "
             f"Run: python -c \"from huggingface_hub import hf_hub_download; "
-            f"hf_hub_download(repo_id='lmstudio-community/Qwen2.5-7B-Instruct-GGUF', "
+            f"hf_hub_download(repo_id='{MODEL_REPO}', "
             f"filename='{MODEL_FILE}', local_dir='{MODEL_DIR}')\""
         )
     _llm = Llama(

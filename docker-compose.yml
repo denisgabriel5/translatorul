@@ -14,8 +14,12 @@ services:
       - models:/app/models
       - jobs:/app/jobs
     environment:
-      # Translation model (Qwen2.5-7B Q4_K_M needs ~6GB RAM on CPU).
-      - TRANSLATE_MODEL_FILE=Qwen2.5-7B-Instruct-Q4_K_M.gguf
+      # Translation model. Qwen2.5-14B Q8_0 (~16GB RAM) gives noticeably more
+      # accurate Romanian than the 7B; drop to a Q4_K_M file (or the 7B) for
+      # less RAM / faster inference. TRANSLATE_MODEL_REPO is the HF repo it's
+      # downloaded from on first run.
+      - TRANSLATE_MODEL_FILE=Qwen2.5-14B-Instruct-Q8_0.gguf
+      - TRANSLATE_MODEL_REPO=bartowski/Qwen2.5-14B-Instruct-GGUF
       # faster-whisper transcription model + CPU compute type.
       # large-v3-turbo: near-large accuracy, much faster than large-v3 on CPU.
       # Drop to "small"/"medium" for faster (lower-quality) transcription.
