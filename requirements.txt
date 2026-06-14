@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sse-starlette
+yt-dlp
+llama-cpp-python
+faster-whisper
+rich
+huggingface-hub

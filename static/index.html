@@ -3,112 +3,177 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>YT Transcribe</title>
+<title>Translatorul</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0a0a0f;
-    --surface: #12121a;
-    --surface2: #1a1a28;
-    --border: #2a2a3e;
-    --text: #e4e4f0;
-    --text-dim: #8888a0;
-    --accent: #6c5ce7;
-    --accent-glow: rgba(108,92,231,0.3);
-    --green: #00d68f;
-    --yellow: #ffb347;
-    --red: #ff6b6b;
-    --radius: 12px;
+    --bg: #000000;
+    --surface: rgba(28, 28, 30, 0.72);
+    --surface2: rgba(118, 118, 128, 0.18);
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #f5f5f7;
+    --text-dim: rgba(235, 235, 245, 0.6);
+    --accent: #0a84ff;
+    --accent-glow: rgba(10, 132, 255, 0.35);
+    --green: #30d158;
+    --yellow: #ffd60a;
+    --red: #ff453a;
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      --bg: #f2f2f7;
+      --surface: rgba(255, 255, 255, 0.72);
+      --surface2: rgba(120, 120, 128, 0.12);
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #1c1c1e;
+      --text-dim: rgba(60, 60, 67, 0.6);
+      --accent: #007aff;
+      --accent-glow: rgba(0, 122, 255, 0.25);
+      --green: #34c759;
+      --yellow: #ffcc00;
+      --red: #ff3b30;
+    }
+  }
+  [data-theme="light"] {
+    --bg: #f2f2f7;
+    --surface: rgba(255, 255, 255, 0.72);
+    --surface2: rgba(120, 120, 128, 0.12);
+    --border: rgba(0, 0, 0, 0.08);
+    --text: #1c1c1e;
+    --text-dim: rgba(60, 60, 67, 0.6);
+    --accent: #007aff;
+    --accent-glow: rgba(0, 122, 255, 0.25);
+    --green: #34c759;
+    --yellow: #ffcc00;
+    --red: #ff3b30;
   }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
+    background:
+      radial-gradient(circle at 15% 0%, rgba(10,132,255,0.18), transparent 45%),
+      radial-gradient(circle at 85% 20%, rgba(191,90,242,0.14), transparent 45%),
+      var(--bg);
     color: var(--text);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 40px 20px;
+    padding: 48px 20px;
+    -webkit-font-smoothing: antialiased;
   }
-  .container { width: 100%; max-width: 640px; }
+  .container { width: 100%; max-width: 600px; }
 
-  header { text-align: center; margin-bottom: 40px; }
+  header { text-align: center; margin-bottom: 36px; }
   header h1 {
-    font-size: 28px; font-weight: 700;
-    background: linear-gradient(135deg, var(--accent), #a29bfe);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    font-size: 34px; font-weight: 700; letter-spacing: -0.02em;
+    color: var(--text);
   }
-  header p { color: var(--text-dim); font-size: 14px; margin-top: 6px; }
+  header p { color: var(--text-dim); font-size: 15px; margin-top: 6px; font-weight: 400; }
 
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 28px;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   }
 
-  .form-group { margin-bottom: 18px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 14px;
+  }
+
+  .form-group { margin-bottom: 16px; }
   .form-group label {
     display: block; font-size: 13px; font-weight: 600;
-    color: var(--text-dim); margin-bottom: 6px; text-transform: uppercase;
-    letter-spacing: 0.5px;
+    color: var(--text-dim); margin-bottom: 8px;
   }
   .form-group input, .form-group select {
-    width: 100%; padding: 12px 16px;
+    width: 100%; padding: 13px 16px;
     background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; color: var(--text); font-size: 15px;
-    outline: none; transition: border 0.2s;
+    border-radius: 12px; color: var(--text); font-size: 16px;
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none; appearance: none;
   }
+  .form-group input::placeholder { color: rgba(235,235,245,0.35); }
   .form-group input:focus, .form-group select:focus {
-    border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow);
+    border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-glow);
   }
-  .form-group select option { background: var(--surface2); }
+  .form-group select option { background: var(--surface); color: var(--text); }
+
+  /* Theme toggle */
+  .theme-toggle {
+    display: inline-flex; margin: 0 auto 28px; padding: 3px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; gap: 2px;
+  }
+  .theme-toggle button {
+    width: auto; padding: 6px 14px; font-size: 13px; font-weight: 600;
+    background: transparent; color: var(--text-dim); border-radius: 8px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .theme-toggle button:hover { opacity: 1; background: rgba(127,127,127,0.12); }
+  .theme-toggle button.active {
+    background: var(--surface); color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  }
+  .theme-toggle-wrap { display: flex; justify-content: center; }
 
   .row { display: flex; gap: 12px; }
   .row .form-group { flex: 1; }
 
   button {
     width: 100%; padding: 14px;
-    background: linear-gradient(135deg, var(--accent), #a29bfe);
-    border: none; border-radius: 8px; color: #fff;
-    font-size: 16px; font-weight: 600; cursor: pointer;
-    transition: opacity 0.2s, transform 0.1s;
+    background: var(--accent);
+    border: none; border-radius: 12px; color: #fff;
+    font-size: 17px; font-weight: 600; cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s, background 0.2s;
+    -webkit-font-smoothing: antialiased;
   }
-  button:hover { opacity: 0.9; }
+  button:hover { opacity: 0.88; }
   button:active { transform: scale(0.98); }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
 
-  .steps { margin-top: 24px; }
+  .btn-secondary {
+    background: var(--surface2); color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-danger { background: var(--red); }
+
+  .steps { margin-top: 8px; }
 
   .step {
     display: flex; align-items: flex-start; gap: 14px;
     padding: 14px 0; border-bottom: 1px solid var(--border);
-    opacity: 0.3; transition: opacity 0.4s;
+    opacity: 0.35; transition: opacity 0.4s;
   }
   .step:last-child { border-bottom: none; }
   .step.active { opacity: 1; }
-  .step.done { opacity: 0.7; }
+  .step.done { opacity: 0.65; }
   .step.error { opacity: 1; }
 
   .step-icon {
-    width: 32px; height: 32px; min-width: 32px;
+    width: 30px; height: 30px; min-width: 30px;
     border-radius: 50%; display: flex; align-items: center;
-    justify-content: center; font-size: 14px; font-weight: 700;
-    background: var(--surface2); border: 2px solid var(--border);
+    justify-content: center; font-size: 13px; font-weight: 600;
+    background: var(--surface2); border: 1.5px solid var(--border);
+    color: var(--text-dim);
     transition: all 0.3s;
   }
   .step.active .step-icon {
-    border-color: var(--accent); background: var(--accent);
-    animation: pulse 1.5s infinite;
+    border-color: var(--accent); background: var(--accent); color: #fff;
+    animation: pulse 1.6s infinite;
   }
   .step.done .step-icon {
-    border-color: var(--green); background: var(--green);
+    border-color: var(--green); background: var(--green); color: #fff;
   }
   .step.error .step-icon {
-    border-color: var(--red); background: var(--red);
+    border-color: var(--red); background: var(--red); color: #fff;
   }
 
   @keyframes pulse {
@@ -117,49 +182,88 @@
   }
 
   .step-content { flex: 1; min-width: 0; }
-  .step-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+  .step-title { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
   .step-message { font-size: 13px; color: var(--text-dim); }
   .step-bar {
-    margin-top: 8px; height: 3px; border-radius: 2px;
+    margin-top: 10px; height: 4px; border-radius: 2px;
     background: var(--surface2); overflow: hidden;
   }
   .step-bar-fill {
     height: 100%; border-radius: 2px;
-    background: linear-gradient(90deg, var(--accent), #a29bfe);
+    background: var(--accent);
     width: 0%; transition: width 0.3s;
   }
 
   .result-card {
-    display: none; text-align: center; padding: 32px;
+    display: none; text-align: center; padding: 36px 28px;
   }
   .result-card.visible { display: block; }
   .result-card .check {
-    width: 64px; height: 64px; border-radius: 50%;
+    width: 60px; height: 60px; border-radius: 50%;
     background: var(--green); display: flex; align-items: center;
-    justify-content: center; margin: 0 auto 16px; font-size: 28px;
+    justify-content: center; margin: 0 auto 16px; font-size: 26px; color: #fff;
   }
-  .result-card h2 { font-size: 20px; margin-bottom: 8px; }
-  .result-card p { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; }
+  .result-card h2 { font-size: 21px; font-weight: 700; margin-bottom: 8px; }
+  .result-card p { color: var(--text-dim); font-size: 14px; margin-bottom: 22px; word-break: break-word; }
   .download-btn {
-    display: inline-block; padding: 14px 32px;
-    background: var(--green); color: #000; font-weight: 700;
-    border-radius: 8px; text-decoration: none; font-size: 15px;
+    display: inline-block; padding: 14px 36px;
+    background: var(--accent); color: #fff; font-weight: 600;
+    border-radius: 12px; text-decoration: none; font-size: 16px;
     transition: opacity 0.2s;
   }
-  .download-btn:hover { opacity: 0.85; }
+  .download-btn:hover { opacity: 0.88; }
 
   .error-msg {
-    color: var(--red); font-size: 13px; margin-top: 12px;
-    display: none; padding: 12px; background: rgba(255,107,107,0.1);
-    border-radius: 8px; border: 1px solid rgba(255,107,107,0.2);
+    color: var(--red); font-size: 13px; margin-top: 14px;
+    display: none; padding: 12px 14px; background: rgba(255,69,58,0.12);
+    border-radius: 12px; border: 1px solid rgba(255,69,58,0.25);
   }
   .error-msg.visible { display: block; }
+
+  /* History / past jobs */
+  .history-list { display: flex; flex-direction: column; gap: 10px; }
+  .history-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .history-info { flex: 1; min-width: 0; }
+  .history-name {
+    font-size: 14px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .history-expiry { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .history-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+    color: var(--text); text-decoration: none; font-size: 16px;
+    cursor: pointer; transition: background 0.2s;
+    flex: none; padding: 0;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.12); }
+  .icon-btn.delete:hover { background: rgba(255,69,58,0.18); color: var(--red); }
+
+  .empty-state {
+    color: var(--text-dim); font-size: 14px; text-align: center;
+    padding: 12px 0;
+  }
 </style>
 </head>
 <body>
 <div class="container">
+  <div class="theme-toggle-wrap">
+    <div class="theme-toggle" id="theme-toggle">
+      <button data-theme-choice="system">Sistem</button>
+      <button data-theme-choice="light">Luminos</button>
+      <button data-theme-choice="dark">Întunecat</button>
+    </div>
+  </div>
+
   <header>
-    <h1>YT Transcribe</h1>
+    <h1>Translatorul</h1>
     <p>Descarcă, transcrie și traduce videoclipuri YouTube</p>
   </header>
 
@@ -223,7 +327,7 @@
         </div>
       </div>
     </div>
-    <button id="cancel-btn" onclick="cancelTask()" style="margin-top:16px;background:linear-gradient(135deg,var(--red),#ff8e8e)">Anulează</button>
+    <button id="cancel-btn" class="btn-danger" onclick="cancelTask()" style="margin-top:20px">Anulează</button>
   </div>
 
   <div class="card result-card" id="result-card">
@@ -232,11 +336,41 @@
     <p id="result-msg">Videoclipul cu subtitrări traduse este gata.</p>
     <a class="download-btn" id="download-link" href="#">Descarcă Video</a>
     <br><br>
-    <button onclick="resetAll()" style="background:transparent;border:1px solid var(--border);color:var(--text-dim);font-size:14px;padding:10px">Tradu alt videoclip</button>
+    <button class="btn-secondary" onclick="resetAll()" style="margin-top:12px">Tradu alt videoclip</button>
+  </div>
+
+  <div class="card" id="history-card">
+    <div class="section-title">Videoclipuri recente</div>
+    <div class="history-list" id="history-list"></div>
+    <p class="empty-state" id="history-empty">Niciun videoclip momentan.</p>
   </div>
 </div>
 
 <script>
+// ---- Theme (system / light / dark) ----
+
+function applyTheme(theme) {
+  if (theme === 'light' || theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', theme);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+  document.querySelectorAll('#theme-toggle button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeChoice === theme);
+  });
+}
+
+function setTheme(theme) {
+  localStorage.setItem('theme', theme);
+  applyTheme(theme);
+}
+
+document.querySelectorAll('#theme-toggle button').forEach(btn => {
+  btn.addEventListener('click', () => setTheme(btn.dataset.themeChoice));
+});
+
+applyTheme(localStorage.getItem('theme') || 'system');
+
 let taskId = null;
 let eventSource = null;
 
@@ -291,14 +425,20 @@ function handleProgress(data) {
       else if (message.includes('transcrie')) titleEl.textContent = 'Transcriere';
     }
   }
+  if (step === 'queued') {
+    setStepMessage('extract', message);
+    activateStep('extract');
+    return;
+  }
   if (step === 'error') { showError(message); return; }
   if (step === 'done') {
     completeAll();
     const info = JSON.parse(message);
     document.getElementById('result-msg').textContent = `Videoclip gata: ${info.file}`;
-    document.getElementById('download-link').href = `/download/${encodeURIComponent(info.stem)}`;
+    document.getElementById('download-link').href = `/download/${encodeURIComponent(taskId)}`;
     document.getElementById('result-card').classList.add('visible');
     if (eventSource) { eventSource.close(); eventSource = null; }
+    loadHistory();
     return;
   }
   setStepMessage(step, message);
@@ -386,6 +526,96 @@ function resetAll() {
   document.getElementById('title-content').textContent = 'Subtitrări / Transcriere';
   if (eventSource) { eventSource.close(); eventSource = null; }
 }
+
+// ---- History / past jobs ----
+
+function formatRemaining(expiresAt) {
+  const seconds = Math.max(0, expiresAt - Date.now() / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (seconds <= 0) return 'Expiră...';
+  return `Disponibil încă ${hours}h ${minutes}m`;
+}
+
+function loadHistory() {
+  fetch('/jobs')
+    .then(r => r.json())
+    .then(renderHistory)
+    .catch(() => {});
+}
+
+function renderHistory(items) {
+  const list = document.getElementById('history-list');
+  const empty = document.getElementById('history-empty');
+  list.innerHTML = '';
+
+  if (!items.length) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  for (const item of items) {
+    const row = document.createElement('div');
+    row.className = 'history-item';
+    row.dataset.taskId = item.task_id;
+    row.dataset.expiresAt = item.expires_at;
+
+    const info = document.createElement('div');
+    info.className = 'history-info';
+
+    const name = document.createElement('div');
+    name.className = 'history-name';
+    name.textContent = item.display_name;
+
+    const expiry = document.createElement('div');
+    expiry.className = 'history-expiry';
+    expiry.textContent = formatRemaining(item.expires_at);
+
+    info.appendChild(name);
+    info.appendChild(expiry);
+
+    const actions = document.createElement('div');
+    actions.className = 'history-actions';
+
+    const downloadLink = document.createElement('a');
+    downloadLink.className = 'icon-btn';
+    downloadLink.href = `/download/${encodeURIComponent(item.task_id)}`;
+    downloadLink.title = 'Descarcă';
+    downloadLink.textContent = '↓';
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'icon-btn delete';
+    deleteBtn.title = 'Șterge';
+    deleteBtn.textContent = '×';
+    deleteBtn.onclick = () => deleteHistoryItem(item.task_id);
+
+    actions.appendChild(downloadLink);
+    actions.appendChild(deleteBtn);
+
+    row.appendChild(info);
+    row.appendChild(actions);
+    list.appendChild(row);
+  }
+}
+
+function deleteHistoryItem(taskId) {
+  fetch(`/jobs/${taskId}`, { method: 'DELETE' })
+    .then(() => loadHistory())
+    .catch(() => {});
+}
+
+function tickHistoryTimers() {
+  document.querySelectorAll('.history-item').forEach(row => {
+    const expiresAt = parseFloat(row.dataset.expiresAt);
+    const expiry = row.querySelector('.history-expiry');
+    if (expiry) expiry.textContent = formatRemaining(expiresAt);
+  });
+}
+
+loadHistory();
+setInterval(loadHistory, 60000);
+setInterval(tickHistoryTimers, 30000);
 </script>
 </body>
 </html>

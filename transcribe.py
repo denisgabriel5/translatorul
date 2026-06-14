@@ -1,11 +1,20 @@
 import html
+import os
 from pathlib import Path
 
-import whisper
 import yt_dlp
 
 
 SUBTITLE_LANGS = ["en", "es", "fr", "de", "pt", "it", "nl", "ru", "ja", "ko", "zh"]
+
+# faster-whisper (CTranslate2) model name and compute type. "small" / "int8"
+# is a good CPU-only speed/quality balance; bump to "large-v3-turbo" if more
+# RAM/CPU is available.
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
+WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
+WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+
+_whisper_model = None
 
 BASE_YDL_OPTS = {
     "quiet": True,
@@ -79,10 +88,27 @@ def download_audio(info: dict, output_dir: Path) -> Path:
     return audio_path
 
 
-def transcribe(audio_path: Path, model_name: str = "base", language: str | None = None) -> dict:
-    model = whisper.load_model(model_name)
-    result = model.transcribe(str(audio_path), language=language, verbose=False)
-    return result
+def _load_whisper_model(model_name: str):
+    global _whisper_model
+    if _whisper_model is None:
+        from faster_whisper import WhisperModel
+        _whisper_model = WhisperModel(
+            model_name,
+            device=WHISPER_DEVICE,
+            compute_type=WHISPER_COMPUTE_TYPE,
+        )
+    return _whisper_model
+
+
+def transcribe(audio_path: Path, model_name: str = WHISPER_MODEL, language: str | None = None) -> dict:
+    model = _load_whisper_model(model_name)
+    segments, _info = model.transcribe(str(audio_path), language=language)
+    return {
+        "segments": [
+            {"start": seg.start, "end": seg.end, "text": seg.text}
+            for seg in segments
+        ]
+    }
 
 
 def read_vtt_cues(path: Path) -> list[tuple[str, str]]:

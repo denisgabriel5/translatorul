@@ -41,9 +41,9 @@ def main():
         description="Download, transcribe, and translate YouTube videos"
     )
     parser.add_argument("url", help="YouTube video URL")
-    parser.add_argument("--model", default="base",
-                        choices=["tiny", "base", "small", "medium", "large"],
-                        help="Whisper model size (default: base)")
+    parser.add_argument("--model", default="small",
+                        choices=["tiny", "base", "small", "medium", "large-v3", "large-v3-turbo", "turbo"],
+                        help="faster-whisper model size (default: small)")
     parser.add_argument("--output", "-o", type=Path, default=Path("output"),
                         help="Output directory (default: output/)")
     parser.add_argument("--input", "-i", type=Path, default=Path("input"),

@@ -1,0 +1,25 @@
+services:
+  translatorul:
+    image: ghcr.io/denisgabriel5/translatorul:latest
+    # Uncomment to build locally instead of pulling the published image:
+    # build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - models:/app/models
+      - jobs:/app/jobs
+    environment:
+      # Translation model (Qwen2.5-7B Q4_K_M needs ~6GB RAM on CPU).
+      - TRANSLATE_MODEL_FILE=Qwen2.5-7B-Instruct-Q4_K_M.gguf
+      # faster-whisper transcription model + CPU compute type.
+      - WHISPER_MODEL=small
+      - WHISPER_COMPUTE_TYPE=int8
+      # Run one job at a time on CPU-only hosts (Whisper + Qwen + ffmpeg
+      # together use most of a 32GB machine's RAM).
+      - MAX_CONCURRENT_JOBS=1
+
+volumes:
+  models:
+  jobs:
