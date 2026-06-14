@@ -10,13 +10,23 @@ finished jobs survive a server restart).
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import signal
 import sys
 import time
 import uuid
+from collections import deque
 from pathlib import Path
+
+logger = logging.getLogger("translatorul")
+if not logger.handlers:
+    _handler = logging.StreamHandler(sys.stdout)
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 BASE_DIR = Path(__file__).parent
 JOBS_DIR = BASE_DIR / "jobs"
@@ -67,7 +77,7 @@ async def _terminate_process_group(proc: asyncio.subprocess.Process):
         await proc.wait()
 
 
-async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job: dict):
+async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job: dict, short: str):
     async for raw_line in proc.stdout:
         line = raw_line.decode("utf-8", errors="ignore").strip()
         if not line:
@@ -76,15 +86,32 @@ async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job
             msg = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if msg.get("step") == "error":
+        step = msg.get("step")
+        if step == "error":
             job["errored"] = True
-        elif msg.get("step") == "done":
+            logger.error("job %s | eroare | %s", short, msg.get("message", ""))
+        elif step == "done":
             job["succeeded"] = True
             try:
                 job["display_name"] = json.loads(msg["message"])["file"]
             except (KeyError, json.JSONDecodeError):
                 job["display_name"] = "video.mp4"
+            logger.info("job %s | gata | %s", short, job["display_name"])
+        else:
+            progress = msg.get("progress") or 0
+            logger.info("job %s | %-9s %3d%% | %s", short, step, int(progress * 100), msg.get("message", ""))
         await q.put(msg)
+
+
+async def _stream_stderr(proc: asyncio.subprocess.Process, tail: deque, short: str):
+    """Forward the worker's stderr (ffmpeg/yt-dlp/Whisper/model download) to the
+    container log, keeping the last lines so a failure can report a useful message."""
+    async for raw_line in proc.stderr:
+        line = raw_line.decode("utf-8", errors="ignore").rstrip()
+        if not line:
+            continue
+        tail.append(line)
+        logger.info("job %s |   %s", short, line)
 
 
 def _rm(path: Path):
@@ -118,6 +145,7 @@ async def run_job(task_id: str, url: str, target_lang: str):
     job = jobs[task_id]
     q: asyncio.Queue = job["queue"]
     job_dir: Path = job["job_dir"]
+    short = task_id[:8]
 
     async def emit(step: str, message: str, progress: float, status: str = "active"):
         await q.put({"step": step, "message": message, "progress": progress, "status": status})
@@ -129,6 +157,7 @@ async def run_job(task_id: str, url: str, target_lang: str):
             if job.get("cancelled"):
                 return
 
+            logger.info("job %s | pornire | %s -> %s", short, url, target_lang)
             proc = await asyncio.create_subprocess_exec(
                 sys.executable, str(WORKER_SCRIPT), url, target_lang, str(job_dir),
                 stdout=asyncio.subprocess.PIPE,
@@ -136,19 +165,27 @@ async def run_job(task_id: str, url: str, target_lang: str):
                 start_new_session=True,
             )
             job["process"] = proc
+            stderr_tail: deque = deque(maxlen=25)
 
             try:
-                await asyncio.wait_for(_stream_output(proc, q, job), timeout=JOB_TIMEOUT)
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        _stream_output(proc, q, job, short),
+                        _stream_stderr(proc, stderr_tail, short),
+                    ),
+                    timeout=JOB_TIMEOUT,
+                )
                 await proc.wait()
             except asyncio.TimeoutError:
                 await _terminate_process_group(proc)
                 job["errored"] = True
+                logger.error("job %s | timeout după %ss", short, JOB_TIMEOUT)
                 await emit("error", "Procesul a expirat (timeout)", 0)
 
             if proc.returncode != 0 and not job.get("succeeded") and not job.get("cancelled"):
                 job["errored"] = True
-                stderr = (await proc.stderr.read()).decode("utf-8", errors="ignore").strip()
-                message = stderr.splitlines()[-1] if stderr else "Procesul a eșuat"
+                message = stderr_tail[-1] if stderr_tail else "Procesul a eșuat"
+                logger.error("job %s | eșuat (cod %s)", short, proc.returncode)
                 await emit("error", message, 0)
 
     except asyncio.CancelledError:
@@ -156,6 +193,7 @@ async def run_job(task_id: str, url: str, target_lang: str):
         if proc is not None:
             await _terminate_process_group(proc)
         job["cancelled"] = True
+        logger.info("job %s | anulat", short)
 
     finally:
         if job.get("succeeded") and not job.get("errored"):
