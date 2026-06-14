@@ -382,6 +382,7 @@ function start() {
   document.getElementById('progress-card').style.display = 'block';
   document.getElementById('result-card').classList.remove('visible');
   document.getElementById('cancel-btn').disabled = false;
+  document.getElementById('cancel-btn').style.display = '';
   document.getElementById('cancel-btn').textContent = 'Anulează';
   resetSteps();
   activateStep('extract');
@@ -437,6 +438,7 @@ function handleProgress(data) {
     document.getElementById('result-msg').textContent = `Videoclip gata: ${info.file}`;
     document.getElementById('download-link').href = `/download/${encodeURIComponent(taskId)}`;
     document.getElementById('result-card').classList.add('visible');
+    document.getElementById('cancel-btn').style.display = 'none';
     if (eventSource) { eventSource.close(); eventSource = null; }
     loadHistory();
     return;

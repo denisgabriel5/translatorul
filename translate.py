@@ -1,134 +1,57 @@
+"""Translation via Madlad-400 (CTranslate2).
+
+Madlad-400 is a dedicated multilingual NMT model. Compared to a general LLM it is
+far faster on CPU and won't fabricate words, and it needs no source-language
+detection -- you only prefix the source text with a target-language token
+(`<2ro>` for Romanian). One translated cue is produced per input cue, so subtitle
+timestamps always stay aligned.
+"""
+
 import os
-import re
 import threading
 from pathlib import Path
 
 MODEL_DIR = Path(os.environ.get("TRANSLATE_MODEL_DIR", str(Path(__file__).parent / "models")))
-MODEL_FILE = os.environ.get("TRANSLATE_MODEL_FILE", "Qwen2.5-14B-Instruct-Q8_0.gguf")
-MODEL_REPO = os.environ.get("TRANSLATE_MODEL_REPO", "bartowski/Qwen2.5-14B-Instruct-GGUF")
-MODEL_PATH = Path(os.environ.get("TRANSLATE_MODEL_PATH", str(MODEL_DIR / MODEL_FILE)))
+# Sub-directory holding the CTranslate2 model + sentencepiece.model.
+MODEL_SUBDIR = os.environ.get("TRANSLATE_MODEL_SUBDIR", "madlad")
+MODEL_PATH = Path(os.environ.get("TRANSLATE_MODEL_PATH", str(MODEL_DIR / MODEL_SUBDIR)))
+MODEL_REPO = os.environ.get("TRANSLATE_MODEL_REPO", "jbochi/madlad400-3b-mt")
+SPM_FILE = os.environ.get("TRANSLATE_SPM_FILE", "sentencepiece.model")
 
-N_CTX = int(os.environ.get("TRANSLATE_N_CTX", "8192"))
-N_THREADS = int(os.environ.get("TRANSLATE_N_THREADS", str(os.cpu_count() or 4)))
+# CT2 quantizes to this on load, so the float weights stay small in RAM.
+COMPUTE_TYPE = os.environ.get("TRANSLATE_COMPUTE_TYPE", "int8")
+THREADS = int(os.environ.get("TRANSLATE_THREADS", str(os.cpu_count() or 4)))
+BATCH_SIZE = int(os.environ.get("TRANSLATE_BATCH_SIZE", "16"))
+BEAM_SIZE = int(os.environ.get("TRANSLATE_BEAM_SIZE", "1"))
 
-# How many cues to translate per LLM call, and how many preceding source
-# cues to show as read-only context so the model can keep sentences that
-# span cue boundaries coherent.
-BATCH_SIZE = int(os.environ.get("TRANSLATE_BATCH_SIZE", "12"))
-CONTEXT_CUES = int(os.environ.get("TRANSLATE_CONTEXT_CUES", "3"))
+# Target languages offered in the UI; all are valid Madlad `<2xx>` codes.
+SUPPORTED_LANGS = {"ro", "en", "fr", "de", "es", "it", "pt", "nl", "ru"}
+DEFAULT_LANG = "ro"
 
-_llm = None
+_translator = None
+_sp = None
 _lock = threading.Lock()
-
-LANG_NAMES = {
-    "ro": "Romanian",
-    "en": "English",
-    "fr": "French",
-    "de": "German",
-    "es": "Spanish",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "nl": "Dutch",
-    "ru": "Russian",
-}
-
-SYSTEM_PROMPT_TEMPLATE = (
-    "You are a professional subtitle translator. You will be given consecutive "
-    "lines of subtitles from a single video, in their original order. Some lines "
-    "may be sentence fragments that only make sense together with neighboring "
-    "lines. Translate the numbered lines into {lang} naturally and accurately, "
-    "using the context lines only to understand meaning and flow.\n\n"
-    "Rules:\n"
-    "- Output exactly one translated line per input line, in the same order.\n"
-    "- Prefix each output line with its number and a period, e.g. '3. ...'.\n"
-    "- Do not merge, split, skip, or add lines.\n"
-    "- Do not translate or repeat the context lines.\n"
-    "- Return only the numbered translations, no extra commentary."
-)
-
-PER_CUE_SYSTEM_PROMPT_TEMPLATE = (
-    "You are a professional translator. Translate the given text accurately and "
-    "naturally into {lang}. Return ONLY the translation, no explanations, no "
-    "notes, no quotation marks."
-)
-
-_NUMBERED_LINE_RE = re.compile(r"^\s*(\d+)[\.\)\:]\s*(.*)$")
 
 
 def _load():
-    global _llm
-    if _llm is not None:
+    global _translator, _sp
+    if _translator is not None:
         return
-    from llama_cpp import Llama
+    import ctranslate2
+    import sentencepiece as spm
 
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Model not found at {MODEL_PATH}. "
-            f"Run: python -c \"from huggingface_hub import hf_hub_download; "
-            f"hf_hub_download(repo_id='{MODEL_REPO}', "
-            f"filename='{MODEL_FILE}', local_dir='{MODEL_DIR}')\""
+            f"Translation model not found at {MODEL_PATH}. Download it with: "
+            f"python -c \"from huggingface_hub import snapshot_download; "
+            f"snapshot_download(repo_id='{MODEL_REPO}', local_dir='{MODEL_PATH}', "
+            f"ignore_patterns=['*.safetensors'])\""
         )
-    _llm = Llama(
-        model_path=str(MODEL_PATH),
-        n_ctx=N_CTX,
-        n_threads=N_THREADS,
-        verbose=False,
+    _translator = ctranslate2.Translator(
+        str(MODEL_PATH), device="cpu", compute_type=COMPUTE_TYPE, intra_threads=THREADS
     )
-
-
-def _lang_name(target_lang: str) -> str:
-    return LANG_NAMES.get(target_lang, target_lang)
-
-
-def _chat(system_prompt: str, user_prompt: str, max_tokens: int) -> str:
-    with _lock:
-        response = _llm.create_chat_completion(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=max_tokens,
-            temperature=0,
-        )
-    return response["choices"][0]["message"]["content"].strip()
-
-
-def _translate_one(text: str, lang: str) -> str:
-    system_prompt = PER_CUE_SYSTEM_PROMPT_TEMPLATE.format(lang=lang)
-    return _chat(system_prompt, f"{text}", max_tokens=256)
-
-
-def _translate_batch(batch: list[str], context: list[str], lang: str) -> list[str] | None:
-    """Translate a batch of cues with surrounding context.
-
-    Returns the translated lines (same length as `batch`) in order, or
-    None if the model's output couldn't be reliably aligned back to the
-    input lines.
-    """
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(lang=lang)
-
-    parts = []
-    if context:
-        context_block = "\n".join(context)
-        parts.append(f"Context (preceding lines, do not translate):\n{context_block}")
-    numbered = "\n".join(f"{i + 1}. {text}" for i, text in enumerate(batch))
-    parts.append(f"Translate these lines:\n{numbered}")
-    user_prompt = "\n\n".join(parts)
-
-    result = _chat(system_prompt, user_prompt, max_tokens=256 * len(batch))
-
-    translations: dict[int, str] = {}
-    for line in result.splitlines():
-        match = _NUMBERED_LINE_RE.match(line)
-        if not match:
-            continue
-        idx = int(match.group(1))
-        translations[idx] = match.group(2).strip()
-
-    if set(translations.keys()) != set(range(1, len(batch) + 1)):
-        return None
-
-    return [translations[i] for i in range(1, len(batch) + 1)]
+    _sp = spm.SentencePieceProcessor()
+    _sp.load(str(MODEL_PATH / SPM_FILE))
 
 
 def translate_text(texts: list[str], target_lang: str = "ro") -> list[str]:
@@ -136,18 +59,19 @@ def translate_text(texts: list[str], target_lang: str = "ro") -> list[str]:
         return []
 
     _load()
-    lang = _lang_name(target_lang)
-    results: list[str] = []
+    lang = target_lang if target_lang in SUPPORTED_LANGS else DEFAULT_LANG
 
-    for start in range(0, len(texts), BATCH_SIZE):
-        batch = texts[start:start + BATCH_SIZE]
-        context = texts[max(0, start - CONTEXT_CUES):start]
+    # Empty/blank cues translate to "" without bothering the model.
+    indices = [i for i, t in enumerate(texts) if t and t.strip()]
+    results = [""] * len(texts)
+    if not indices:
+        return results
 
-        translated = _translate_batch(batch, context, lang)
-        if translated is None:
-            # Fall back to per-cue translation so timestamps never desync.
-            translated = [_translate_one(text, lang) for text in batch]
-
-        results.extend(translated)
-
+    inputs = [_sp.encode(f"<2{lang}> {texts[i].strip()}", out_type=str) for i in indices]
+    with _lock:
+        outputs = _translator.translate_batch(
+            inputs, max_batch_size=BATCH_SIZE, beam_size=BEAM_SIZE
+        )
+    for i, out in zip(indices, outputs):
+        results[i] = _sp.decode(out.hypotheses[0]).strip()
     return results

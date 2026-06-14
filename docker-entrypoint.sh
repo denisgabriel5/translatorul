@@ -2,17 +2,18 @@
 set -e
 
 MODEL_DIR="${TRANSLATE_MODEL_DIR:-/app/models}"
-MODEL_FILE="${TRANSLATE_MODEL_FILE:-Qwen2.5-14B-Instruct-Q8_0.gguf}"
-MODEL_REPO="${TRANSLATE_MODEL_REPO:-bartowski/Qwen2.5-14B-Instruct-GGUF}"
+MODEL_SUBDIR="${TRANSLATE_MODEL_SUBDIR:-madlad}"
+MODEL_REPO="${TRANSLATE_MODEL_REPO:-jbochi/madlad400-3b-mt}"
+MODEL_PATH="$MODEL_DIR/$MODEL_SUBDIR"
 
-if [ ! -f "$MODEL_DIR/$MODEL_FILE" ]; then
-  echo "Downloading translation model ($MODEL_FILE from $MODEL_REPO)..."
+if [ ! -d "$MODEL_PATH" ] || [ -z "$(ls -A "$MODEL_PATH" 2>/dev/null)" ]; then
+  echo "Downloading translation model ($MODEL_REPO)..."
   python -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download(
+from huggingface_hub import snapshot_download
+snapshot_download(
     repo_id='$MODEL_REPO',
-    filename='$MODEL_FILE',
-    local_dir='$MODEL_DIR',
+    local_dir='$MODEL_PATH',
+    ignore_patterns=['*.safetensors', '*.h5', '*.msgpack'],
 )
 "
 fi

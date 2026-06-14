@@ -2,7 +2,8 @@ fastapi
 uvicorn[standard]
 sse-starlette
 yt-dlp
-llama-cpp-python
+ctranslate2
+sentencepiece
 faster-whisper
 rich
 huggingface-hub

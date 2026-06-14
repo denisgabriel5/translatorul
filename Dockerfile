@@ -1,14 +1,11 @@
 FROM python:3.12-slim
 
 # ffmpeg: hardsub + audio extraction
-# build-essential/cmake: build llama-cpp-python (CPU) from source
 # nodejs: yt-dlp JS challenge bypass
 # tini: PID 1 init so killed worker process groups don't leave zombies
+# (ctranslate2/faster-whisper/sentencepiece ship prebuilt wheels -- no compiler needed)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    build-essential \
-    cmake \
-    git \
     nodejs \
     npm \
     tini \

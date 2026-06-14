@@ -6,70 +6,73 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import translate
 
 
-def _patch_load(monkeypatch):
-    # Avoid requiring the real GGUF model file / llama-cpp runtime.
+class FakeSp:
+    """Minimal sentencepiece stand-in: pieces are whitespace-split tokens."""
+
+    def encode(self, text, out_type=str):
+        return text.split()
+
+    def decode(self, pieces):
+        # Drop the leading "<2xx>" target token to mimic a real translation.
+        return " ".join(p for p in pieces if not p.startswith("<2"))
+
+
+class _Hyp:
+    def __init__(self, tokens):
+        self.hypotheses = [tokens]
+
+
+class FakeTranslator:
+    def __init__(self):
+        self.seen = []
+
+    def translate_batch(self, inputs, **kwargs):
+        self.seen = inputs
+        # Echo the input tokens back as the "translation".
+        return [_Hyp(tokens) for tokens in inputs]
+
+
+def _patch(monkeypatch):
+    fake_tr = FakeTranslator()
     monkeypatch.setattr(translate, "_load", lambda: None)
-    monkeypatch.setattr(translate, "_llm", object())
+    monkeypatch.setattr(translate, "_sp", FakeSp())
+    monkeypatch.setattr(translate, "_translator", fake_tr)
+    return fake_tr
 
 
-def test_batch_translation_preserves_count(monkeypatch):
-    _patch_load(monkeypatch)
-    monkeypatch.setattr(translate, "BATCH_SIZE", 3)
-    monkeypatch.setattr(translate, "CONTEXT_CUES", 1)
+def test_preserves_count_and_applies_target_token(monkeypatch):
+    fake_tr = _patch(monkeypatch)
 
-    def fake_chat(system_prompt, user_prompt, max_tokens):
-        return "1. unu\n2. doi\n3. trei"
-
-    monkeypatch.setattr(translate, "_chat", fake_chat)
-
-    texts = ["one", "two", "three"]
-    result = translate.translate_text(texts, "ro")
-
-    assert result == ["unu", "doi", "trei"]
-
-
-def test_mismatched_batch_falls_back_to_per_cue(monkeypatch):
-    _patch_load(monkeypatch)
-    monkeypatch.setattr(translate, "BATCH_SIZE", 3)
-    monkeypatch.setattr(translate, "CONTEXT_CUES", 1)
-
-    call_count = {"n": 0}
-
-    def fake_chat(system_prompt, user_prompt, max_tokens):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            # Batch call: model merged lines 2 and 3 -> only 2 lines returned.
-            return "1. unu\n2. doi si trei"
-        # Per-cue fallback calls.
-        return f"fallback-{call_count['n']}"
-
-    monkeypatch.setattr(translate, "_chat", fake_chat)
-
-    texts = ["one", "two", "three"]
+    texts = ["one", "two two", "three"]
     result = translate.translate_text(texts, "ro")
 
     assert len(result) == len(texts)
-    assert result == ["fallback-2", "fallback-3", "fallback-4"]
+    # Every input sent to the model is prefixed with the target-language token.
+    assert all(tokens[0] == "<2ro>" for tokens in fake_tr.seen)
 
 
-def test_multiple_batches_use_context(monkeypatch):
-    _patch_load(monkeypatch)
-    monkeypatch.setattr(translate, "BATCH_SIZE", 2)
-    monkeypatch.setattr(translate, "CONTEXT_CUES", 2)
+def test_empty_strings_pass_through(monkeypatch):
+    fake_tr = _patch(monkeypatch)
 
-    seen_prompts = []
+    result = translate.translate_text(["", "   ", "hello"], "ro")
 
-    def fake_chat(system_prompt, user_prompt, max_tokens):
-        seen_prompts.append(user_prompt)
-        if "Context" in user_prompt:
-            return "1. trei\n2. patru"
-        return "1. unu\n2. doi"
+    assert result[0] == "" and result[1] == ""
+    assert result[2] != ""
+    # Only the non-blank cue is sent to the model.
+    assert len(fake_tr.seen) == 1
 
-    monkeypatch.setattr(translate, "_chat", fake_chat)
 
-    texts = ["one", "two", "three", "four"]
-    result = translate.translate_text(texts, "ro")
+def test_unsupported_lang_falls_back_to_ro(monkeypatch):
+    fake_tr = _patch(monkeypatch)
 
-    assert len(result) == 4
-    assert "Context" in seen_prompts[1]
-    assert "one" in seen_prompts[1] and "two" in seen_prompts[1]
+    translate.translate_text(["something"], "zz")
+
+    assert fake_tr.seen[0][0] == "<2ro>"
+
+
+def test_supported_lang_uses_its_token(monkeypatch):
+    fake_tr = _patch(monkeypatch)
+
+    translate.translate_text(["something"], "fr")
+
+    assert fake_tr.seen[0][0] == "<2fr>"

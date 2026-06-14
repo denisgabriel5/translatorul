@@ -14,19 +14,18 @@ services:
       - models:/app/models
       - jobs:/app/jobs
     environment:
-      # Translation model. Qwen2.5-14B Q8_0 (~16GB RAM) gives noticeably more
-      # accurate Romanian than the 7B; drop to a Q4_K_M file (or the 7B) for
-      # less RAM / faster inference. TRANSLATE_MODEL_REPO is the HF repo it's
-      # downloaded from on first run.
-      - TRANSLATE_MODEL_FILE=Qwen2.5-14B-Instruct-Q8_0.gguf
-      - TRANSLATE_MODEL_REPO=bartowski/Qwen2.5-14B-Instruct-GGUF
+      # Translation: Madlad-400 3B dedicated NMT (CTranslate2), int8 on CPU
+      # (~3-4GB RAM). Much faster than an LLM and won't invent words.
+      # TRANSLATE_MODEL_REPO is the HF repo downloaded on first run.
+      - TRANSLATE_MODEL_REPO=jbochi/madlad400-3b-mt
+      - TRANSLATE_COMPUTE_TYPE=int8
       # faster-whisper transcription model + CPU compute type.
       # large-v3-turbo: near-large accuracy, much faster than large-v3 on CPU.
       # Drop to "small"/"medium" for faster (lower-quality) transcription.
       - WHISPER_MODEL=large-v3-turbo
       - WHISPER_COMPUTE_TYPE=int8
-      # Run one job at a time on CPU-only hosts (Whisper + Qwen + ffmpeg
-      # together use most of a 32GB machine's RAM).
+      # Run one job at a time on CPU-only hosts (Whisper + translator + ffmpeg
+      # all compete for cores/RAM).
       - MAX_CONCURRENT_JOBS=1
 
 volumes:

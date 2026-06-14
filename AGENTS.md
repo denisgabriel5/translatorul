@@ -3,7 +3,7 @@
 ## Goal
 
 Build a local pipeline that downloads YouTube videos, extracts subtitles or transcribes with
-faster-whisper, translates to Romanian (or another language) with Qwen2.5-7B, and serves it
+faster-whisper, translates to Romanian (or another language) with Madlad-400, and serves it
 through a modern web interface with hardsubbed output. Runs on CPU-only hardware via Docker.
 
 ## Project Layout
@@ -13,11 +13,11 @@ translatorul/
 ├── app.py                  # FastAPI server (SSE, cancel, download, job orchestration)
 ├── worker.py               # per-job subprocess: download/transcribe/translate/hardsub
 ├── transcribe.py           # YouTube download, subtitle extraction, faster-whisper, SRT I/O
-├── translate.py            # Qwen2.5-7B translation via llama-cpp-python GGUF (batched)
+├── translate.py            # Madlad-400 translation via CTranslate2 (NMT)
 ├── main.py                 # CLI orchestrator (download → transcribe → translate)
 ├── static/index.html       # Romanian web UI
 ├── Dockerfile, docker-compose.yml, docker-entrypoint.sh
-├── models/                  # GGUF model + faster-whisper cache (volume)
+├── models/                  # Madlad CT2 model + faster-whisper cache (volume)
 └── jobs/                     # per-job working directories (volume, runtime)
 ```
 
@@ -44,34 +44,34 @@ translatorul/
   Sistem/Luminos/Întunecat segmented control toggles `data-theme` on `<html>`, persisted
   in `localStorage`; with no choice saved it follows `prefers-color-scheme`.
 
-## Translation: batched, context-aware (`translate.py`)
+## Translation: Madlad-400 NMT (`translate.py`)
 
-The original approach translated each subtitle cue independently, which produced broken
-Romanian because cues are sentence fragments. Now:
+Earlier iterations used a general LLM (Qwen2.5), first per-cue then batched-with-context.
+That fixed alignment but was slow on CPU (a 14B model ran 30+ min for a 20-min video) and
+still occasionally fabricated non-words. Now translation uses a dedicated NMT:
 
-- Cues are translated in batches (`TRANSLATE_BATCH_SIZE`, default 12), with the preceding
-  `TRANSLATE_CONTEXT_CUES` (default 3) source cues included as read-only context.
-- The model is asked to return numbered lines (`"1. ..."`) matching the input count.
-- If the returned line count doesn't match the batch size (model merged/split lines), that
-  batch falls back to per-cue translation — guaranteeing cue/timestamp alignment is never
-  broken.
-- **Qwen2.5-7B-Instruct** (Q4_K_M GGUF, 4.36 GB), `lmstudio-community/Qwen2.5-7B-Instruct-GGUF`,
-  loaded via `llama-cpp-python`. Model path/`n_ctx`/threads are env-configurable
-  (`TRANSLATE_MODEL_DIR`, `TRANSLATE_MODEL_FILE`, `TRANSLATE_N_CTX`, `TRANSLATE_N_THREADS`).
-- A module-level lock guards `_llm` calls (only matters if `MAX_CONCURRENT_JOBS > 1`).
+- **Madlad-400 3B** (`jbochi/madlad400-3b-mt`) via **CTranslate2**, `int8` on CPU. ~10-30×
+  faster than the LLM, won't invent words, and needs no source-language detection.
+- Each cue is prefixed with the Madlad target token `<2xx>` (e.g. `<2ro>`), tokenized with
+  SentencePiece, and translated; one output per input cue keeps timestamps aligned.
+- Env-configurable: `TRANSLATE_MODEL_REPO`, `TRANSLATE_MODEL_DIR`/`TRANSLATE_MODEL_SUBDIR`,
+  `TRANSLATE_COMPUTE_TYPE` (int8), `TRANSLATE_BATCH_SIZE` (16), `TRANSLATE_BEAM_SIZE` (1),
+  `TRANSLATE_THREADS`. A module-level lock guards the translator.
 
 ## Transcription
 
 - **faster-whisper** (CTranslate2) instead of `openai-whisper` — ~4x faster on CPU, lower
-  memory, streams segments. Model size/compute type via `WHISPER_MODEL` (default `small`) and
-  `WHISPER_COMPUTE_TYPE` (default `int8`).
+  memory, streams segments. Model size/compute type via `WHISPER_MODEL` (default
+  `large-v3-turbo`) and `WHISPER_COMPUTE_TYPE` (default `int8`); `WHISPER_VAD` (default on)
+  trims non-speech to keep subtitle timing in sync.
 
 ## Docker
 
-- `Dockerfile`: CPU-only `python:3.12-slim`, builds `llama-cpp-python` from source, installs
-  ffmpeg + Node.js (yt-dlp JS challenge bypass) + `tini` (PID 1 / zombie reaping for killed
-  process groups).
-- `docker-entrypoint.sh`: downloads the Qwen GGUF into `/app/models` on first run if missing.
+- `Dockerfile`: CPU-only `python:3.12-slim`, installs ffmpeg + Node.js (yt-dlp JS challenge
+  bypass) + `tini` (PID 1 / zombie reaping for killed process groups). No build toolchain —
+  ctranslate2/faster-whisper/sentencepiece ship prebuilt wheels, so the image builds fast.
+- `docker-entrypoint.sh`: downloads the Madlad CT2 model into `/app/models/madlad` on first
+  run if missing (skips the redundant `*.safetensors`).
 - `docker-compose.yml`: pulls `ghcr.io/denisgabriel5/translatorul:latest`; `models` and `jobs`
   named volumes persist weights and (briefly) job output.
 - `.github/workflows/docker-publish.yml`: builds and pushes the image to GHCR on push to
@@ -80,6 +80,6 @@ Romanian because cues are sentence fragments. Now:
 ## Known Issues / Notes
 
 - No GPU support; everything runs on CPU.
-- A fresh worker process per job means the Qwen model reloads each run (a few seconds) —
-  the cost of guaranteed killability via process isolation.
+- A fresh worker process per job means the translation/Whisper models reload each run (a few
+  seconds) — the cost of guaranteed killability via process isolation.
 - Romanian character display in PowerShell console may need `$env:PYTHONIOENCODING='utf-8'`.
