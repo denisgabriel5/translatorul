@@ -77,7 +77,28 @@ async def _terminate_process_group(proc: asyncio.subprocess.Process):
         await proc.wait()
 
 
-async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job: dict, short: str):
+async def publish(job: dict, msg: dict):
+    """Append a progress message to the job's event log and wake any SSE readers.
+
+    The log is kept in full (not a single-consumer queue) so a client that
+    refreshes or reconnects can replay every event from the start and rebuild
+    the current progress state -- the job keeps running regardless of viewers.
+    """
+    cond: asyncio.Condition = job["event_cond"]
+    async with cond:
+        job["events"].append(msg)
+        cond.notify_all()
+
+
+async def close_stream(job: dict):
+    """Mark the job's event stream finished so readers can stop after replay."""
+    cond: asyncio.Condition = job["event_cond"]
+    async with cond:
+        job["closed"] = True
+        cond.notify_all()
+
+
+async def _stream_output(proc: asyncio.subprocess.Process, job: dict, short: str):
     # Progress arrives in ~1% ticks; only log on step change / each ~10% so the
     # container log stays readable while the UI still gets every update.
     last_step = None
@@ -107,7 +128,7 @@ async def _stream_output(proc: asyncio.subprocess.Process, q: asyncio.Queue, job
             if step != last_step or decile != last_decile:
                 last_step, last_decile = step, decile
                 logger.info("job %s | %-9s %3d%% | %s", short, step, int(progress * 100), msg.get("message", ""))
-        await q.put(msg)
+        await publish(job, msg)
 
 
 async def _stream_stderr(proc: asyncio.subprocess.Process, tail: deque, short: str):
@@ -150,12 +171,11 @@ def _write_result_meta(job_dir: Path, display_name: str, completed_at: float):
 
 async def run_job(task_id: str, url: str, target_lang: str):
     job = jobs[task_id]
-    q: asyncio.Queue = job["queue"]
     job_dir: Path = job["job_dir"]
     short = task_id[:8]
 
     async def emit(step: str, message: str, progress: float, status: str = "active"):
-        await q.put({"step": step, "message": message, "progress": progress, "status": status})
+        await publish(job, {"step": step, "message": message, "progress": progress, "status": status})
 
     try:
         await emit("queued", "În coadă...", 0.0, "queued")
@@ -177,7 +197,7 @@ async def run_job(task_id: str, url: str, target_lang: str):
             try:
                 await asyncio.wait_for(
                     asyncio.gather(
-                        _stream_output(proc, q, job, short),
+                        _stream_output(proc, job, short),
                         _stream_stderr(proc, stderr_tail, short),
                     ),
                     timeout=JOB_TIMEOUT,
@@ -211,14 +231,16 @@ async def run_job(task_id: str, url: str, target_lang: str):
         else:
             _rm(job_dir)
             jobs.pop(task_id, None)
-        await q.put(None)
+        await close_stream(job)
 
 
 def start_job(url: str, target_lang: str) -> str:
     task_id = str(uuid.uuid4())
     job_dir = JOBS_DIR / task_id
     jobs[task_id] = {
-        "queue": asyncio.Queue(),
+        "events": [],
+        "event_cond": asyncio.Condition(),
+        "closed": False,
         "job_dir": job_dir,
         "process": None,
         "cancelled": False,
@@ -235,11 +257,13 @@ async def cancel_job(task_id: str) -> bool:
         return False
 
     job["cancelled"] = True
+    await publish(job, {"step": "cancelled", "message": "Anulat", "progress": 0, "status": "cancelled"})
     proc = job.get("process")
     if proc is not None:
         await _terminate_process_group(proc)
-    job["task"].cancel()
-    await job["queue"].put({"step": "cancelled", "message": "Anulat", "progress": 0, "status": "cancelled"})
+    task = job.get("task")
+    if task is not None:
+        task.cancel()
     return True
 
 

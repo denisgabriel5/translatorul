@@ -97,6 +97,11 @@ the OS preference and is remembered via `localStorage`.
 - Cancelling a job (`POST /cancel/{task_id}`) sends `SIGTERM`/`SIGKILL` to the
   whole process group, so ffmpeg/yt-dlp/Whisper are actually killed —
   not left running in the background.
+- Progress survives a refresh: the job's progress is kept as a replayable event
+  log, so reloading or reopening the page reattaches to the running job and
+  restores the bars. Closing the tab no longer cancels the job — only the
+  Cancel button does. A server restart, however, ends any in-flight job: it is
+  cleaned up on startup and the reconnecting page shows it as cancelled.
 - Job files live under `jobs/<task_id>/`. Intermediate files are deleted once a
   job finishes; the final video is removed after download or after `RESULT_TTL`.
 

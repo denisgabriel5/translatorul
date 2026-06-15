@@ -36,8 +36,15 @@ translatorul/
 - **Cleanup**: on completion, intermediate files in `jobs/<task_id>/` are deleted, keeping
   only `final.mp4`; on cancel/error the whole job dir is removed. A periodic sweep removes
   finished-but-undownloaded results after `RESULT_TTL`.
-- **Auto-cancel**: SSE disconnect (browser closed/navigated away) cancels the job; the
-  `beforeunload` `navigator.sendBeacon` call remains as a backup.
+- **Progress persists across refresh**: each job keeps a full in-memory **event log**
+  (`job["events"]` + an `asyncio.Condition`), not a single-consumer queue. `GET /progress/{id}`
+  replays the whole log before streaming live, so a reload or reopened tab reattaches and
+  rebuilds the bars. The browser stores the in-flight `task_id` in `localStorage` and
+  reconnects on load. Closing the tab no longer cancels the job — it runs to completion;
+  cancellation happens only via the explicit **Cancel** button (`POST /cancel/{task_id}`).
+  A job does **not** survive a server restart, though: the worker is killed and its
+  unfinished `jobs/<id>/` dir is swept on startup (`load_completed_jobs`), so the
+  reconnecting client gets a 404 and shows the job as cancelled.
 - **UI** (`static/index.html`): Apple-style design (SF Pro fonts, glassmorphism, blue
   accent). A "Videoclipuri recente" card lists finished jobs from `GET /jobs` with a
   live countdown to `expires_at` and a delete button (`DELETE /jobs/{task_id}`). A

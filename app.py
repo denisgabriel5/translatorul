@@ -49,23 +49,33 @@ async def cancel_task(task_id: str):
 @app.get("/progress/{task_id}")
 async def progress(request: Request, task_id: str):
     job = job_manager.jobs.get(task_id)
-    if job is None:
+    # Jobs reloaded from disk after a restart are finished and have no live
+    # stream; treat them as gone so the client falls back to the history list.
+    if job is None or "event_cond" not in job:
         raise HTTPException(404, "Task not found")
-    q: asyncio.Queue = job["queue"]
+    cond: asyncio.Condition = job["event_cond"]
 
     async def generator():
+        # Replay the whole event log first so a reconnecting/refreshed client
+        # rebuilds the current progress, then keep streaming new events.
+        # Closing the tab no longer cancels the job -- it runs to completion.
+        idx = 0
         while True:
             if await request.is_disconnected():
-                if not job.get("cancelled") and not job.get("succeeded"):
-                    await job_manager.cancel_job(task_id)
                 break
-            try:
-                msg = await asyncio.wait_for(q.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
-            if msg is None:
+            async with cond:
+                while idx >= len(job["events"]) and not job["closed"]:
+                    try:
+                        await asyncio.wait_for(cond.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        break
+                pending = job["events"][idx:]
+                idx += len(pending)
+                closed = job["closed"]
+            for msg in pending:
+                yield {"event": "progress", "data": json.dumps(msg)}
+            if closed and idx >= len(job["events"]):
                 break
-            yield {"event": "progress", "data": json.dumps(msg)}
 
     return EventSourceResponse(generator())
 
