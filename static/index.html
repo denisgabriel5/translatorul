@@ -374,9 +374,13 @@ applyTheme(localStorage.getItem('theme') || 'system');
 let taskId = null;
 let eventSource = null;
 
-function start() {
-  const url = document.getElementById('url-input').value.trim();
-  if (!url) { showError('Introdu un link YouTube'); return; }
+// Remember the in-flight job so a refresh or reopened tab can reattach to its
+// live progress. Closing the page no longer cancels the job -- it keeps running.
+const ACTIVE_KEY = 'activeTask';
+function saveActiveTask(id) { localStorage.setItem(ACTIVE_KEY, id); }
+function clearActiveTask() { localStorage.removeItem(ACTIVE_KEY); }
+
+function showProgressUI() {
   hideError();
   document.getElementById('input-card').style.display = 'none';
   document.getElementById('progress-card').style.display = 'block';
@@ -384,6 +388,12 @@ function start() {
   document.getElementById('cancel-btn').disabled = false;
   document.getElementById('cancel-btn').style.display = '';
   document.getElementById('cancel-btn').textContent = 'Anulează';
+}
+
+function start() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { showError('Introdu un link YouTube'); return; }
+  showProgressUI();
   resetSteps();
   activateStep('extract');
 
@@ -392,30 +402,57 @@ function start() {
   fetch(`/start?url=${encodeURIComponent(url)}&target_lang=${encodeURIComponent(lang)}`, { method: 'POST' })
     .then(r => r.json())
     .then(data => {
-      taskId = data.task_id;
-      eventSource = new EventSource(`/progress/${taskId}`);
-      eventSource.addEventListener('progress', e => {
-        const data = JSON.parse(e.data);
-        if (data.step === 'cancelled') {
-          if (eventSource) { eventSource.close(); eventSource = null; }
-          showError('Proces anulat');
-          return;
-        }
-        handleProgress(data);
-      });
-      eventSource.onerror = () => {
-        if (eventSource) { eventSource.close(); eventSource = null; }
-      };
+      saveActiveTask(data.task_id);
+      connectProgress(data.task_id);
     })
     .catch(err => showError(err.message));
 }
 
-// Auto-cancel when leaving the page
-window.addEventListener('beforeunload', () => {
-  if (taskId) {
-    navigator.sendBeacon(`/cancel/${taskId}`, '');
-  }
-});
+function connectProgress(id, opts = {}) {
+  taskId = id;
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  let gotEvent = false;
+  const es = new EventSource(`/progress/${id}`);
+  eventSource = es;
+  es.addEventListener('progress', e => {
+    gotEvent = true;
+    const data = JSON.parse(e.data);
+    if (data.step === 'cancelled') {
+      es.close();
+      if (eventSource === es) eventSource = null;
+      clearActiveTask();
+      taskId = null;
+      showError('Proces anulat');
+      return;
+    }
+    handleProgress(data);
+  });
+  es.onerror = () => {
+    // EventSource auto-retries transient drops (readyState CONNECTING). A CLOSED
+    // state means the server rejected the stream -- e.g. it restarted and no
+    // longer knows this task. The job does not survive a restart, so treat it
+    // as cancelled instead of pretending it is still running.
+    if (es.readyState === EventSource.CLOSED) {
+      if (eventSource === es) eventSource = null;
+      if (opts.restore && !gotEvent && taskId === id) {
+        clearActiveTask();
+        taskId = null;
+        resetSteps();
+        showError('Proces anulat (serverul a repornit)');
+        loadHistory();
+      }
+    }
+  };
+}
+
+// On load, reattach to a job that was still running when the page was closed.
+function restoreActiveTask() {
+  const saved = localStorage.getItem(ACTIVE_KEY);
+  if (!saved) return;
+  showProgressUI();
+  resetSteps();
+  connectProgress(saved, { restore: true });
+}
 
 function handleProgress(data) {
   const { step, message, progress, status } = data;
@@ -431,7 +468,7 @@ function handleProgress(data) {
     activateStep('extract');
     return;
   }
-  if (step === 'error') { showError(message); return; }
+  if (step === 'error') { clearActiveTask(); showError(message); return; }
   if (step === 'done') {
     completeAll();
     const info = JSON.parse(message);
@@ -440,6 +477,7 @@ function handleProgress(data) {
     document.getElementById('result-card').classList.add('visible');
     document.getElementById('cancel-btn').style.display = 'none';
     if (eventSource) { eventSource.close(); eventSource = null; }
+    clearActiveTask();
     loadHistory();
     return;
   }
@@ -521,6 +559,7 @@ function resetSteps() {
 
 function cancelTask() {
   if (!taskId) return;
+  clearActiveTask();
   fetch(`/cancel/${taskId}`, { method: 'POST' }).catch(() => {});
   document.getElementById('cancel-btn').disabled = true;
   document.getElementById('cancel-btn').textContent = 'Se anulează...';
@@ -540,6 +579,7 @@ function hideError() {
 }
 
 function resetAll() {
+  clearActiveTask();
   document.getElementById('result-card').classList.remove('visible');
   document.getElementById('progress-card').style.display = 'none';
   document.getElementById('input-card').style.display = 'block';
@@ -636,6 +676,7 @@ function tickHistoryTimers() {
 }
 
 loadHistory();
+restoreActiveTask();
 setInterval(loadHistory, 60000);
 setInterval(tickHistoryTimers, 30000);
 </script>
