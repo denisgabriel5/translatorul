@@ -193,6 +193,17 @@
     background: var(--accent);
     width: 0%; transition: width 0.3s;
   }
+  /* While a step is active but has no real progress yet (e.g. the long
+     translation model-load), animate an indeterminate sweep so it never
+     looks frozen at 0%. */
+  .step-bar-fill.indeterminate {
+    width: 35%; transition: none;
+    animation: indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0% { transform: translateX(-130%); }
+    100% { transform: translateX(330%); }
+  }
 
   .result-card {
     display: none; text-align: center; padding: 36px 28px;
@@ -373,6 +384,8 @@ applyTheme(localStorage.getItem('theme') || 'system');
 
 let taskId = null;
 let eventSource = null;
+let jobDone = false;          // terminal state reached (success/error/cancel)
+let completionPoll = null;    // /jobs fallback poll handle
 
 // Remember the in-flight job so a refresh or reopened tab can reattach to its
 // live progress. Closing the page no longer cancels the job -- it keeps running.
@@ -404,12 +417,14 @@ function start() {
     .then(data => {
       saveActiveTask(data.task_id);
       connectProgress(data.task_id);
+      startCompletionPoll();
     })
     .catch(err => showError(err.message));
 }
 
 function connectProgress(id, opts = {}) {
   taskId = id;
+  jobDone = false;
   if (eventSource) { eventSource.close(); eventSource = null; }
   let gotEvent = false;
   const es = new EventSource(`/progress/${id}`);
@@ -418,6 +433,8 @@ function connectProgress(id, opts = {}) {
     gotEvent = true;
     const data = JSON.parse(e.data);
     if (data.step === 'cancelled') {
+      jobDone = true;
+      stopCompletionPoll();
       es.close();
       if (eventSource === es) eventSource = null;
       clearActiveTask();
@@ -435,6 +452,8 @@ function connectProgress(id, opts = {}) {
     if (es.readyState === EventSource.CLOSED) {
       if (eventSource === es) eventSource = null;
       if (opts.restore && !gotEvent && taskId === id) {
+        jobDone = true;
+        stopCompletionPoll();
         clearActiveTask();
         taskId = null;
         resetSteps();
@@ -452,6 +471,46 @@ function restoreActiveTask() {
   showProgressUI();
   resetSteps();
   connectProgress(saved, { restore: true });
+  startCompletionPoll();
+}
+
+// The live progress stream is best-effort. EventSource auto-retries dropped
+// connections, but a half-open stream can stall for a while before the browser
+// notices. `startCompletionPoll` independently reconciles the final result from
+// /jobs, so the UI always reaches completion once the backend finishes -- even
+// if the live stream stalls mid-translation.
+function startCompletionPoll() {
+  stopCompletionPoll();
+  completionPoll = setInterval(checkCompletion, 4000);
+}
+
+function stopCompletionPoll() {
+  if (completionPoll) { clearInterval(completionPoll); completionPoll = null; }
+}
+
+function checkCompletion() {
+  if (!taskId || jobDone) { stopCompletionPoll(); return; }
+  fetch('/jobs')
+    .then(r => r.json())
+    .then(items => {
+      const mine = items.find(it => it.task_id === taskId);
+      if (mine) showResult(mine.display_name);
+    })
+    .catch(() => {});
+}
+
+function showResult(file) {
+  if (jobDone) return;
+  jobDone = true;
+  stopCompletionPoll();
+  clearActiveTask();
+  completeAll();
+  document.getElementById('result-msg').textContent = `Videoclip gata: ${file}`;
+  document.getElementById('download-link').href = `/download/${encodeURIComponent(taskId)}`;
+  document.getElementById('result-card').classList.add('visible');
+  document.getElementById('cancel-btn').style.display = 'none';
+  if (eventSource) { eventSource.close(); eventSource = null; }
+  loadHistory();
 }
 
 function handleProgress(data) {
@@ -468,17 +527,10 @@ function handleProgress(data) {
     activateStep('extract');
     return;
   }
-  if (step === 'error') { clearActiveTask(); showError(message); return; }
+  if (step === 'error') { jobDone = true; clearActiveTask(); showError(message); return; }
   if (step === 'done') {
-    completeAll();
     const info = JSON.parse(message);
-    document.getElementById('result-msg').textContent = `Videoclip gata: ${info.file}`;
-    document.getElementById('download-link').href = `/download/${encodeURIComponent(taskId)}`;
-    document.getElementById('result-card').classList.add('visible');
-    document.getElementById('cancel-btn').style.display = 'none';
-    if (eventSource) { eventSource.close(); eventSource = null; }
-    clearActiveTask();
-    loadHistory();
+    showResult(info.file);
     return;
   }
   completePriorSteps(step);
@@ -514,13 +566,22 @@ function completePriorSteps(step) {
 
 function activateStep(step) {
   document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.step-bar-fill').forEach(el => {
+    if (el.id !== `bar-${step}`) el.classList.remove('indeterminate');
+  });
   const el = document.getElementById(`step-${step}`);
   if (el) el.classList.add('active');
+  // No real progress yet -> show the indeterminate sweep instead of a dead 0% bar.
+  const bar = document.getElementById(`bar-${step}`);
+  if (bar && (bar.style.width === '' || bar.style.width === '0%')) {
+    bar.classList.add('indeterminate');
+  }
 }
 
 function markDone(step) {
   const el = document.getElementById(`step-${step}`);
   if (el) { el.classList.remove('active'); el.classList.add('done'); }
+  setStepProgress(step, 1);
 }
 
 function markSkipped(step, msg) {
@@ -538,6 +599,10 @@ function completeAll() {
     el.classList.remove('active');
     el.classList.add('done');
   });
+  document.querySelectorAll('.step-bar-fill').forEach(el => {
+    el.classList.remove('indeterminate');
+    el.style.width = '100%';
+  });
 }
 
 function setStepMessage(step, msg) {
@@ -547,14 +612,22 @@ function setStepMessage(step, msg) {
 
 function setStepProgress(step, pct) {
   const el = document.getElementById(`bar-${step}`);
-  if (el) el.style.width = `${Math.round(pct * 100)}%`;
+  if (!el) return;
+  // Real progress arrived: drop the indeterminate sweep and show the true fill.
+  if (pct > 0) {
+    el.classList.remove('indeterminate');
+    el.style.width = `${Math.round(pct * 100)}%`;
+  }
 }
 
 function resetSteps() {
   document.querySelectorAll('.step').forEach(el => {
     el.classList.remove('active', 'done', 'error');
   });
-  document.querySelectorAll('.step-bar-fill').forEach(el => el.style.width = '0%');
+  document.querySelectorAll('.step-bar-fill').forEach(el => {
+    el.classList.remove('indeterminate');
+    el.style.width = '0%';
+  });
 }
 
 function cancelTask() {
@@ -566,6 +639,8 @@ function cancelTask() {
 }
 
 function showError(msg) {
+  stopCompletionPoll();
+  if (eventSource) { eventSource.close(); eventSource = null; }
   const el = document.getElementById('error-msg');
   el.textContent = msg;
   el.classList.add('visible');
@@ -580,6 +655,9 @@ function hideError() {
 
 function resetAll() {
   clearActiveTask();
+  jobDone = true;
+  stopCompletionPoll();
+  taskId = null;
   document.getElementById('result-card').classList.remove('visible');
   document.getElementById('progress-card').style.display = 'none';
   document.getElementById('input-card').style.display = 'block';
